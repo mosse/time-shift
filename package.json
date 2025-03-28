@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run test:playlist && npm run test:buffer && npm run test:buffer-extended && npm run test:downloader && npm run test:downloader-enhanced && npm run test:monitor && npm run test:pipeline",
     "test:playlist": "node src/test/test-playlist.js",
     "test:buffer": "node src/test/test-buffer.js",
     "test:buffer-extended": "node src/test/test-buffer-extended.js",

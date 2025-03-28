@@ -11,10 +11,19 @@ async function testEnhancedDownloaderService() {
   try {
     logger.info('Starting enhanced downloader service test...');
     
-    // Clear download history to ensure clean test
-    downloaderService.clearHistory();
-    downloaderService.clearStats();
+    // Clear buffer to ensure clean test
     bufferService.clear();
+    
+    // Initialize downloader service
+    downloaderService.initialize({
+      bufferService: bufferService,
+      maxRetries: 2,
+      maxConcurrentDownloads: 3
+    });
+    
+    // Clear download history to ensure clean test
+    downloaderService.clearDownloadHistory();
+    downloaderService.resetStats();
     
     // 1. First get a playlist to find segment URLs
     const playlistUrl = 'https://d2zihajmogu5jn.cloudfront.net/bipbop-advanced/gear1/prog_index.m3u8';
@@ -71,17 +80,15 @@ async function testEnhancedDownloaderService() {
     // 5. Download multiple segments in parallel
     logger.info('Testing parallel download with 3 segments...');
     
-    const segmentsToDownload = segmentUrls.slice(1, 4).map((url, index) => ({
-      url,
-      metadata: {
-        sequenceNumber: index + 1,
-        duration: 4
-      }
+    const segmentsToDownload = segmentUrls.slice(1, 4);
+    const segmentMetadata = segmentsToDownload.map((url, index) => ({
+      sequenceNumber: index + 1,
+      duration: 4
     }));
     
-    const parallelResults = await downloaderService.downloadSegmentsParallel(
-      segmentsToDownload, 
-      2 // concurrency
+    const parallelResults = await downloaderService.downloadSegments(
+      segmentsToDownload,
+      { maxConcurrentDownloads: 2 } // options
     );
     
     logger.info(`Downloaded ${parallelResults.length} segments in parallel`);
@@ -92,8 +99,7 @@ async function testEnhancedDownloaderService() {
     const forcedDownloadResult = await downloaderService.downloadSegment(
       firstSegmentUrl, 
       firstSegmentMetadata,
-      10000, // timeout
-      true // force download
+      { force: true } // force download
     );
     
     logger.info('Forced download results:');
@@ -103,11 +109,7 @@ async function testEnhancedDownloaderService() {
       size: forcedDownloadResult.size
     }, null, 2));
     
-    // 7. Test download history
-    const history = downloaderService.getDownloadHistory();
-    logger.info(`Download history has ${history.length} entries`);
-    
-    // 8. Test error handling with an intentionally bad URL
+    // 7. Test error handling with an intentionally bad URL
     logger.info('Testing error handling with an invalid URL...');
     
     const badResult = await downloaderService.downloadSegment(
@@ -118,11 +120,11 @@ async function testEnhancedDownloaderService() {
     logger.info('Bad URL download results:');
     logger.info(JSON.stringify({
       success: badResult.success,
-      errorCategory: badResult.error?.category,
-      errorMessage: badResult.error?.message
+      errorCategory: badResult.errorCategory,
+      errorMessage: badResult.errorMessage
     }, null, 2));
     
-    // 9. Get download statistics
+    // 8. Get download statistics
     const stats = downloaderService.getStats();
     
     logger.info('Final download statistics:');
@@ -138,7 +140,7 @@ async function testEnhancedDownloaderService() {
       errorsByCategory: stats.errorsByCategory
     }, null, 2));
     
-    // 10. Get final buffer statistics
+    // 9. Get final buffer statistics
     const bufferStats = bufferService.getBufferStats();
     logger.info('Final buffer statistics:');
     logger.info(JSON.stringify({
@@ -151,8 +153,7 @@ async function testEnhancedDownloaderService() {
     
     return {
       stats,
-      bufferStats,
-      history
+      bufferStats
     };
   } catch (error) {
     logger.error(`Enhanced downloader test failed: ${error.message}`);

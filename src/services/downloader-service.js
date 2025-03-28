@@ -285,12 +285,13 @@ class DownloaderService extends EventEmitter {
         
         // Store in buffer with metadata
         const segmentId = metadata.sequenceNumber?.toString() || `segment_${Date.now()}`;
-        const bufferResult = await this.bufferService.addSegment(segmentId, data, {
+        const bufferResult = await this.bufferService.addSegment(data, {
           url,
           size,
           downloadTime: durationMs,
           bandwidth: bandwidthKbps,
           timestamp: Date.now(),
+          sequenceNumber: metadata.sequenceNumber,
           ...metadata
         });
         

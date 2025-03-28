@@ -29,6 +29,13 @@ async function testDownloaderService() {
     // Clear buffer to ensure clean test
     bufferService.clear();
     
+    // Initialize downloader service
+    downloaderService.initialize({
+      bufferService: bufferService,
+      maxRetries: 2,
+      maxConcurrentDownloads: 3
+    });
+    
     // 3. Get information about the playlist
     const playlistInfo = playlistService.getPlaylistInfo(parsedPlaylist);
     logger.info('Playlist information:');
