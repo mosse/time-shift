@@ -20,7 +20,7 @@ router.get('/health', (req, res) => {
     services: {
       pipeline: isRunning,
       monitor: pipelineStatus.monitor ? pipelineStatus.monitor.isRunning : false,
-      buffer: bufferService.isInitialized(),
+      buffer: typeof bufferService.isInitialized === 'function' ? bufferService.isInitialized() : false,
       downloader: pipelineStatus.downloader ? pipelineStatus.downloader.activeDownloads >= 0 : false
     }
   });
