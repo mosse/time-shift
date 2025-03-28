@@ -13,7 +13,8 @@
     "test:playlist": "node src/test/test-playlist.js",
     "test:buffer": "node src/test/test-buffer.js",
     "test:buffer-extended": "node src/test/test-buffer-extended.js",
-    "test:downloader": "node src/test/test-downloader.js"
+    "test:downloader": "node src/test/test-downloader.js",
+    "test:downloader-enhanced": "node src/test/test-downloader-enhanced.js"
   },
   "keywords": [
     "radio",
