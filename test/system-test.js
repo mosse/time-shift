@@ -14,6 +14,27 @@ const TEST_DURATION = process.env.TEST_DURATION || 60000; // 1 minute by default
 const SERVER_URL = `http://localhost:${config.PORT || 3000}`;
 
 /**
+ * Wait for ms milliseconds
+ * @param {number} ms - Milliseconds to wait
+ * @returns {Promise} - Promise that resolves after ms milliseconds
+ */
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Helper function to create a test instance of the service manager with shortened timeframes for testing
+function createTestServiceManager() {
+  const ServiceManager = require('../src/services').ServiceManager;
+  // Create a test instance with shortened durations for testing
+  return new ServiceManager({
+    bufferDuration: 5 * 60 * 1000, // 5 minutes 
+    monitorInterval: 10000, // 10 seconds
+    maxRetries: 3,
+    maxConcurrentDownloads: 3
+  });
+}
+
+/**
  * Run the system test
  */
 async function runSystemTest() {
@@ -21,6 +42,8 @@ async function runSystemTest() {
   
   let server;
   const startTime = Date.now();
+  // Use our test service manager with shorter buffer duration
+  const testServiceManager = createTestServiceManager();
   
   try {
     // Step 1: Start the server and all services
@@ -107,7 +130,7 @@ async function runSystemTest() {
     await new Promise((resolve) => {
       const interval = setInterval(async () => {
         try {
-          const status = serviceManager.getPipelineStatus();
+          const status = testServiceManager.getPipelineStatus();
           const bufferStatus = status.buffer;
           
           logger.info('System status:', { 
@@ -146,7 +169,7 @@ async function runSystemTest() {
     if (server) {
       try {
         // Stop all services
-        await serviceManager.stopPipeline();
+        await testServiceManager.stopPipeline();
         
         // Close server if it's running
         if (server.listening) {
@@ -194,7 +217,7 @@ async function testApiEndpoints() {
  */
 async function checkAcquisitionPipeline() {
   // Get initial pipeline status
-  const initialStatus = serviceManager.getPipelineStatus();
+  const initialStatus = testServiceManager.getPipelineStatus();
   
   if (!initialStatus.isRunning) {
     throw new Error('Acquisition pipeline is not running');
@@ -206,7 +229,7 @@ async function checkAcquisitionPipeline() {
   logger.info('Waiting for segments to be added to buffer...');
   await waitForCondition(
     () => {
-      const status = serviceManager.getPipelineStatus();
+      const status = testServiceManager.getPipelineStatus();
       return status.buffer.segmentsStored > 0;
     },
     20000, // 20 seconds max
@@ -214,7 +237,7 @@ async function checkAcquisitionPipeline() {
   );
   
   // Get updated status after waiting
-  const updatedStatus = serviceManager.getPipelineStatus();
+  const updatedStatus = testServiceManager.getPipelineStatus();
   
   if (updatedStatus.buffer.segmentsStored === 0) {
     throw new Error('No segments added to buffer after waiting period');
@@ -319,14 +342,14 @@ async function testShutdown(server) {
   logger.info('Testing shutdown procedures...');
   
   // Get initial status
-  const initialStatus = serviceManager.getPipelineStatus();
+  const initialStatus = testServiceManager.getPipelineStatus();
   logger.info('Status before shutdown:', initialStatus);
   
   // Stop pipeline
-  await serviceManager.stopPipeline();
+  await testServiceManager.stopPipeline();
   
   // Verify pipeline stopped
-  const stoppedStatus = serviceManager.getPipelineStatus();
+  const stoppedStatus = testServiceManager.getPipelineStatus();
   if (stoppedStatus.isRunning) {
     throw new Error('Pipeline did not stop properly');
   }
@@ -355,13 +378,6 @@ async function waitForCondition(conditionFn, timeout, interval = 500) {
   }
   
   return false;
-}
-
-/**
- * Helper: Sleep function
- */
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // Run the test if this script is executed directly

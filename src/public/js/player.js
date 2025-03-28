@@ -69,7 +69,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const keyboardShortcuts = document.querySelector('.keyboard-shortcuts');
     
     // Stream URLs
-    const streamUrl = '/stream.m3u8';
+    const streamUrl = '/api/playlist';
     let hls = null;
     let currentSequence = 0;
     let reconnectTimer = null;
