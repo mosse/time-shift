@@ -228,6 +228,51 @@ select {
 #playerStatusContent, #statusContent {
   font-size: 14px;
   line-height: 1.6;
+  transition: all 0.3s ease;
+}
+
+/* Status type indicators */
+#playerStatusContent.info {
+  color: #2c3e50;
+}
+
+#playerStatusContent.warn {
+  color: #f39c12;
+  background-color: rgba(243, 156, 18, 0.1);
+  padding: 8px;
+  border-radius: 4px;
+  border-left: 3px solid #f39c12;
+}
+
+#playerStatusContent.error {
+  color: #e74c3c;
+  background-color: rgba(231, 76, 60, 0.1);
+  padding: 8px;
+  border-radius: 4px;
+  border-left: 3px solid #e74c3c;
+}
+
+/* Buffering animation */
+@keyframes buffering {
+  0% { background-position: 0 0; }
+  100% { background-position: 30px 0; }
+}
+
+.buffering {
+  background: linear-gradient(
+    45deg,
+    rgba(52, 152, 219, 0.2) 25%,
+    rgba(52, 152, 219, 0.3) 25%,
+    rgba(52, 152, 219, 0.3) 50%,
+    rgba(52, 152, 219, 0.2) 50%,
+    rgba(52, 152, 219, 0.2) 75%,
+    rgba(52, 152, 219, 0.3) 75%
+  );
+  background-size: 30px 30px;
+  animation: buffering 1s linear infinite;
+  border-radius: 4px;
+  padding: 8px;
+  color: #2c3e50;
 }
 
 /* Description Text */
