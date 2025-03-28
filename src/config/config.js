@@ -1,8 +1,8 @@
 module.exports = {
-  // Stream URLs
+  // Stream URLs - Using public test streams
   STREAM_URLS: {
-    AKAMAI: 'https://akamai.example.com/stream.m3u8',
-    CLOUDFRONT: 'https://cloudfront.example.com/stream.m3u8'
+    AKAMAI: 'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8',
+    CLOUDFRONT: 'https://d2zihajmogu5jn.cloudfront.net/bipbop-advanced/bipbop_16x9_variant.m3u8'
   },
   
   // Time settings (in milliseconds)
