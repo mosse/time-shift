@@ -24,23 +24,39 @@ class PlaylistGenerator {
    * Generate a time-shifted HLS playlist based on current buffer state
    * @param {Object} options - Options for playlist generation
    * @param {number} options.segmentCount - Number of segments to include in the playlist
-   * @returns {string} - Generated m3u8 playlist content
+   * @param {number} options.timeshift - Optional override for time shift in milliseconds
+   * @param {string} options.baseUrl - Base URL for segment URLs
+   * @returns {Object} - Generated playlist data with m3u8 content
    */
   generatePlaylist(options = {}) {
     try {
-      const { segmentCount = this.options.segmentCount } = options;
+      const { 
+        segmentCount = this.options.segmentCount,
+        timeshift = undefined,
+        baseUrl = ''
+      } = options;
       
       // Calculate target time (current time - delay)
       const now = Date.now();
-      const targetTime = now - this.options.timeShiftDuration;
+      // Use provided timeshift if available, otherwise use default
+      const timeShiftDuration = timeshift !== undefined ? 
+                               parseInt(timeshift) * 1000 : // Convert seconds to ms if provided
+                               this.options.timeShiftDuration;
+      
+      const targetTime = now - timeShiftDuration;
       logger.info(`Generating playlist for target time: ${new Date(targetTime).toISOString()}`);
       
       // Get segment around the target time
       const anchorSegment = bufferService.getSegmentAt(targetTime);
       
       if (!anchorSegment) {
-        logger.warn('No segments available at target time');
-        return this._generateEmptyPlaylist();
+        const oldestTime = bufferService.getOldestSegmentTime();
+        if (oldestTime) {
+          logger.warn(`Target time ${new Date(targetTime).toISOString()} is earlier than oldest segment ${new Date(oldestTime).toISOString()}`);
+        } else {
+          logger.warn('No segments available at target time');
+        }
+        return this._generateEmptyPlaylist(baseUrl);
       }
       
       // Find the sequence number of the anchor segment
@@ -59,19 +75,21 @@ class PlaylistGenerator {
         const segment = bufferService.getSegmentBySequence(seq);
         if (segment) {
           playlistSegments.push(segment);
-          maxDuration = Math.max(maxDuration, segment.metadata.duration);
+          maxDuration = Math.max(maxDuration, segment.metadata.duration || 0);
+        } else {
+          logger.warn(`Segment with sequence number ${seq} not found`);
         }
       }
       
       if (playlistSegments.length === 0) {
         logger.warn('No valid segments found for playlist');
-        return this._generateEmptyPlaylist();
+        return this._generateEmptyPlaylist(baseUrl);
       }
       
       // Sort segments by sequence number to ensure correct order
       playlistSegments.sort((a, b) => a.metadata.sequenceNumber - b.metadata.sequenceNumber);
       
-      return this._formatPlaylist(playlistSegments, maxDuration);
+      return this._formatPlaylist(playlistSegments, maxDuration, baseUrl);
     } catch (error) {
       logger.error(`Error generating playlist: ${error}`);
       return this._generateEmptyPlaylist();
@@ -83,48 +101,72 @@ class PlaylistGenerator {
    * @private
    * @param {Array} segments - Array of segment objects
    * @param {number} maxDuration - Maximum segment duration
-   * @returns {string} - Formatted m3u8 playlist
+   * @param {string} baseUrl - Base URL for segment URLs
+   * @returns {Object} - Formatted playlist with m3u8 content and metadata
    */
-  _formatPlaylist(segments, maxDuration) {
+  _formatPlaylist(segments, maxDuration, baseUrl = '') {
     const targetDuration = Math.ceil(maxDuration || this.options.targetDuration);
     const mediaSequence = segments[0].metadata.sequenceNumber;
     
     // Create playlist header
-    let playlist = '#EXTM3U\n';
-    playlist += `#EXT-X-VERSION:${this.options.playlistVersion}\n`;
-    playlist += `#EXT-X-TARGETDURATION:${targetDuration}\n`;
-    playlist += `#EXT-X-MEDIA-SEQUENCE:${mediaSequence}\n`;
+    let m3u8Content = '#EXTM3U\n';
+    m3u8Content += `#EXT-X-VERSION:${this.options.playlistVersion}\n`;
+    m3u8Content += `#EXT-X-TARGETDURATION:${targetDuration}\n`;
+    m3u8Content += `#EXT-X-MEDIA-SEQUENCE:${mediaSequence}\n`;
+    
+    // Prepare JSON format segments
+    const jsonSegments = [];
     
     // Add segments
     segments.forEach(segment => {
-      // Add segment info
-      playlist += `#EXTINF:${segment.metadata.duration.toFixed(3)},\n`;
+      const duration = segment.metadata.duration || 10;
+      const sequenceNumber = segment.metadata.sequenceNumber;
+      const uri = `/stream/segment/${sequenceNumber}.ts`;
       
-      // For segment URI, use a relative URL pattern that maps to our stream endpoint
-      // The segment ID will be the sequence number for easy retrieval
-      playlist += `/stream/segment/${segment.metadata.sequenceNumber}.ts\n`;
+      // Add segment info to m3u8
+      m3u8Content += `#EXTINF:${duration.toFixed(3)},\n`;
+      m3u8Content += `${baseUrl}${uri}\n`;
+      
+      // Add to JSON format
+      jsonSegments.push({
+        duration,
+        uri,
+        sequenceNumber
+      });
     });
     
-    // Don't add an end tag as this is a live stream
-    
-    return playlist;
+    // Return both m3u8 content and structured data
+    return {
+      m3u8Content,
+      segments: jsonSegments,
+      mediaSequence,
+      targetDuration
+    };
   }
   
   /**
    * Generate an empty playlist with appropriate error indicators
    * @private
-   * @returns {string} - Empty m3u8 playlist
+   * @param {string} baseUrl - Base URL for segment URLs
+   * @returns {Object} - Empty m3u8 playlist data
    */
-  _generateEmptyPlaylist() {
-    let playlist = '#EXTM3U\n';
-    playlist += `#EXT-X-VERSION:${this.options.playlistVersion}\n`;
-    playlist += `#EXT-X-TARGETDURATION:${this.options.targetDuration}\n`;
-    playlist += '#EXT-X-MEDIA-SEQUENCE:0\n';
-    playlist += '#EXT-X-DISCONTINUITY\n';
-    playlist += `#EXTINF:${this.options.targetDuration.toFixed(3)},\n`;
-    playlist += `/stream/unavailable.ts\n`;
+  _generateEmptyPlaylist(baseUrl = '') {
+    const uri = `/stream/unavailable.ts`;
     
-    return playlist;
+    let m3u8Content = '#EXTM3U\n';
+    m3u8Content += `#EXT-X-VERSION:${this.options.playlistVersion}\n`;
+    m3u8Content += `#EXT-X-TARGETDURATION:${this.options.targetDuration}\n`;
+    m3u8Content += '#EXT-X-MEDIA-SEQUENCE:0\n';
+    m3u8Content += '#EXT-X-DISCONTINUITY\n';
+    m3u8Content += `#EXTINF:${this.options.targetDuration.toFixed(3)},\n`;
+    m3u8Content += `${baseUrl}${uri}\n`;
+    
+    return {
+      m3u8Content,
+      segments: [],
+      mediaSequence: 0,
+      targetDuration: this.options.targetDuration
+    };
   }
 }
 

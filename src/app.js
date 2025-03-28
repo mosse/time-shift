@@ -3,13 +3,27 @@ const path = require('path');
 const morgan = require('morgan');
 const cors = require('cors');
 const logger = require('./utils/logger');
+const { serviceManager } = require('./services');
+const { PlaylistGenerator } = require('./services/playlist-generator');
+const config = require('./config/config');
 
 // Import routes
 const routes = require('./routes');
 const streamRoutes = require('./routes/stream');
+const apiRoutes = require('./routes/api');
 
 // Create Express application
 const app = express();
+
+// Initialize playlist generator
+const playlistGenerator = new PlaylistGenerator({
+  bufferService: serviceManager.bufferService,
+  timeShift: config.DELAY_DURATION || 28800000, // 8 hours
+  baseUrl: `http://localhost:${config.PORT || 3000}`
+});
+
+// Make playlist generator available to routes
+app.set('playlistGenerator', playlistGenerator);
 
 // Configure CORS
 const corsOptions = {
@@ -22,7 +36,32 @@ const corsOptions = {
 
 // Apply middleware
 app.use(cors(corsOptions));
-app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
+
+// Setup request logging with built-in response time
+app.use(morgan(':method :url :status :response-time ms - :res[content-length]', { 
+  stream: { 
+    write: message => {
+      const parts = message.split(' ');
+      // Extract response time from log message
+      const responseTimeIndex = parts.findIndex(part => part.endsWith('ms'));
+      if (responseTimeIndex > 0) {
+        const responseTime = parseFloat(parts[responseTimeIndex]);
+        if (!isNaN(responseTime)) {
+          // Use enhanced logger to track request metrics
+          logger.request(
+            { method: parts[0], url: parts[1], headers: {} },
+            { statusCode: parseInt(parts[2]) },
+            responseTime
+          );
+          return;
+        }
+      }
+      // Fallback to simple logging if response time not found
+      logger.info(message.trim());
+    } 
+  } 
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -47,6 +86,7 @@ app.use((req, res, next) => {
 // Apply routes
 app.use('/', routes);
 app.use('/', streamRoutes);
+app.use('/api', apiRoutes);
 
 // 404 handler
 app.use((req, res, next) => {

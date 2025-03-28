@@ -349,12 +349,11 @@ class BufferService extends EventEmitter {
   }
   
   /**
-   * Get the current buffer statistics
-   * @returns {Object} - Object containing buffer statistics
-   * @deprecated Use getBufferStats() instead
+   * Get buffer statistics (DEPRECATED - use getBufferStats instead)
+   * @returns {Object} Buffer statistics
    */
   getStats() {
-    logger.warn('getStats() is deprecated, use getBufferStats() instead');
+    // Instead of warning every time, just call the new method
     return this.getBufferStats();
   }
   
@@ -498,6 +497,32 @@ class BufferService extends EventEmitter {
       previousCount: this.segments.length,
       previousBytes: this.totalSize
     });
+  }
+  
+  /**
+   * Get timestamp of the oldest segment in the buffer
+   * @returns {number|null} - Timestamp of oldest segment, or null if buffer is empty
+   */
+  getOldestSegmentTime() {
+    try {
+      if (this.segments.length === 0) {
+        logger.warn('Cannot get oldest segment: Buffer is empty');
+        return null;
+      }
+      
+      let oldestTime = Infinity;
+      
+      for (const [key, segment] of this.segmentsByTimestamp.entries()) {
+        if (segment.metadata && segment.metadata.timestamp) {
+          oldestTime = Math.min(oldestTime, segment.metadata.timestamp);
+        }
+      }
+      
+      return oldestTime === Infinity ? null : oldestTime;
+    } catch (error) {
+      logger.error(`Error getting oldest segment time: ${error.message}`);
+      return null;
+    }
   }
 }
 

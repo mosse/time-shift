@@ -9,14 +9,17 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "test": "npm run test:playlist && npm run test:buffer && npm run test:buffer-extended && npm run test:downloader && npm run test:downloader-enhanced && npm run test:monitor && npm run test:pipeline",
+    "start:prod": "NODE_ENV=production node src/index.js",
+    "start:debug": "LOG_LEVEL=debug node src/index.js",
+    "test": "npm run test:playlist && npm run test:buffer && npm run test:buffer-extended && npm run test:downloader && npm run test:downloader-enhanced && npm run test:monitor && npm run test:pipeline && npm run test:system",
     "test:playlist": "node src/test/test-playlist.js",
     "test:buffer": "node src/test/test-buffer.js",
     "test:buffer-extended": "node src/test/test-buffer-extended.js",
     "test:downloader": "node src/test/test-downloader.js",
     "test:downloader-enhanced": "node src/test/test-downloader-enhanced.js",
     "test:monitor": "node src/test/test-monitor.js",
-    "test:pipeline": "node src/test/test-acquisition-pipeline.js"
+    "test:pipeline": "node src/test/test-acquisition-pipeline.js",
+    "test:system": "node test/system-test.js"
   },
   "keywords": [
     "radio",
@@ -33,6 +36,7 @@
     "m3u8-parser": "^7.2.0",
     "morgan": "^1.10.0",
     "nodemon": "^3.1.9",
-    "winston": "^3.17.0"
+    "winston": "^3.17.0",
+    "winston-daily-rotate-file": "^4.7.1"
   }
 }
