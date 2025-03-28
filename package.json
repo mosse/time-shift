@@ -12,7 +12,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "test:playlist": "node src/test/test-playlist.js",
     "test:buffer": "node src/test/test-buffer.js",
-    "test:buffer-extended": "node src/test/test-buffer-extended.js"
+    "test:buffer-extended": "node src/test/test-buffer-extended.js",
+    "test:downloader": "node src/test/test-downloader.js"
   },
   "keywords": [
     "radio",
