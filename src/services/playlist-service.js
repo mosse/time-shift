@@ -67,9 +67,6 @@ function parsePlaylist(playlistContent) {
 function getSegmentUrls(parsedPlaylist, baseUrl) {
   try {
     logger.info('Extracting segment URLs');
-    if (!parsedPlaylist || !parsedPlaylist.segments || !parsedPlaylist.segments.length) {
-      throw new Error('No segments found in playlist');
-    }
     
     // If it's a master playlist, we need to first get the media playlist URLs
     if (parsedPlaylist.playlists && parsedPlaylist.playlists.length) {
@@ -85,6 +82,10 @@ function getSegmentUrls(parsedPlaylist, baseUrl) {
     }
     
     // For media playlists, get segment URLs
+    if (!parsedPlaylist || !parsedPlaylist.segments || !parsedPlaylist.segments.length) {
+      throw new Error('No segments found in playlist');
+    }
+    
     return parsedPlaylist.segments.map(segment => {
       // Handle relative URLs
       if (segment.uri.startsWith('http')) {
