@@ -6,6 +6,7 @@ const logger = require('./utils/logger');
 
 // Import routes
 const routes = require('./routes');
+const streamRoutes = require('./routes/stream');
 
 // Create Express application
 const app = express();
@@ -45,6 +46,7 @@ app.use((req, res, next) => {
 
 // Apply routes
 app.use('/', routes);
+app.use('/', streamRoutes);
 
 // 404 handler
 app.use((req, res, next) => {

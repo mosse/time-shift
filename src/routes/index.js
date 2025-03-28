@@ -84,7 +84,9 @@ router.get('/', (req, res) => {
     endpoints: [
       { path: '/', method: 'GET', description: 'API information' },
       { path: '/health', method: 'GET', description: 'Server health status' },
-      { path: '/stats', method: 'GET', description: 'Service statistics' }
+      { path: '/stats', method: 'GET', description: 'Service statistics' },
+      { path: '/stream.m3u8', method: 'GET', description: 'Time-shifted HLS playlist' },
+      { path: '/stream/segment/:sequenceNumber.ts', method: 'GET', description: 'HLS segment data' }
     ]
   });
 });

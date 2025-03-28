@@ -3,81 +3,184 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Time-Shift Radio</title>
+    <title>Time-Shifted Radio Player</title>
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-            line-height: 1.6;
-            color: #333;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            padding: 20px;
             max-width: 800px;
             margin: 0 auto;
-            padding: 20px;
-        }
-        header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid #eee;
+            background-color: #f5f5f5;
+            color: #333;
         }
         h1 {
-            color: #0066cc;
-        }
-        .description {
-            font-size: 18px;
+            color: #2c3e50;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 10px;
             margin-bottom: 30px;
         }
-        .info-panel {
-            background-color: #f9f9f9;
-            border-radius: 5px;
+        .player-container {
+            background-color: #fff;
+            border-radius: 8px;
             padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        video {
+            width: 100%;
+            border-radius: 4px;
             margin-bottom: 20px;
         }
-        .api-endpoint {
-            background-color: #e9f5ff;
-            border-left: 4px solid #0066cc;
-            padding: 10px 15px;
-            margin-bottom: 10px;
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
         }
-        footer {
-            text-align: center;
-            margin-top: 40px;
-            color: #666;
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
             font-size: 14px;
         }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .status {
+            background-color: #eee;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            margin-top: 20px;
+        }
+        .status h3 {
+            margin-top: 0;
+        }
     </style>
+    <!-- Include the HLS.js library for HLS playback in browsers -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 </head>
 <body>
-    <header>
-        <h1>Time-Shift Radio</h1>
-        <p class="description">Access radio streams with time-shifting capabilities</p>
-    </header>
-
-    <div class="info-panel">
-        <h2>About the Service</h2>
-        <p>Time-Shift Radio allows you to listen to radio streams with a time delay, giving you the ability to pause, rewind, and catch up on content you might have missed.</p>
+    <h1>Time-Shifted Radio Stream Player</h1>
+    
+    <div class="player-container">
+        <video id="video" controls></video>
+        
+        <div class="controls">
+            <button id="playButton">Play Stream</button>
+            <button id="refreshButton">Refresh Stream</button>
+            <button id="statsButton">Check API Status</button>
+        </div>
+        
+        <p>This player is streaming content with an 8-hour delay from the original broadcast.</p>
+        
+        <div class="status" id="status">
+            <h3>Stream Status</h3>
+            <div id="statusContent">Player ready. Click "Play Stream" to begin.</div>
+        </div>
     </div>
-
-    <h2>API Endpoints</h2>
-    <div class="api-endpoint">
-        <strong>GET /health</strong>
-        <p>Check the health status of the service.</p>
-    </div>
-    <div class="api-endpoint">
-        <strong>GET /stats</strong>
-        <p>Get detailed statistics about the buffer and system status.</p>
-    </div>
-    <div class="api-endpoint">
-        <strong>GET /stream</strong>
-        <p>Access the time-shifted stream (coming soon).</p>
-    </div>
-
-    <div class="info-panel">
-        <h2>Current Status</h2>
-        <p>Fetch the current service status from the <a href="/health">health endpoint</a> or check <a href="/stats">detailed statistics</a>.</p>
-    </div>
-
-    <footer>
-        <p>Time-Shift Radio - Version 1.0.0</p>
-    </footer>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const video = document.getElementById('video');
+            const playButton = document.getElementById('playButton');
+            const refreshButton = document.getElementById('refreshButton');
+            const statsButton = document.getElementById('statsButton');
+            const statusContent = document.getElementById('statusContent');
+            
+            // Stream URL
+            const streamUrl = '/stream.m3u8';
+            let hls = null;
+            
+            // Initialize and play the HLS stream
+            function initPlayer() {
+                statusContent.textContent = 'Initializing player...';
+                
+                // If an HLS instance exists, destroy it first
+                if (hls) {
+                    hls.destroy();
+                }
+                
+                // Check if HLS.js is supported
+                if (Hls.isSupported()) {
+                    hls = new Hls({
+                        debug: false,
+                        manifestLoadingMaxRetry: 3,
+                        manifestLoadingRetryDelay: 1000,
+                        manifestLoadingMaxRetryTimeout: 10000
+                    });
+                    
+                    // Bind HLS to the video element
+                    hls.loadSource(streamUrl);
+                    hls.attachMedia(video);
+                    
+                    // Handle HLS events
+                    hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                        statusContent.textContent = 'Stream loaded successfully. Playback starting...';
+                        video.play().catch(error => {
+                            statusContent.textContent = 'Playback error: ' + error.message;
+                        });
+                    });
+                    
+                    hls.on(Hls.Events.ERROR, function(event, data) {
+                        statusContent.textContent = 'Player error: ' + data.type + ' - ' + data.details;
+                        console.error('HLS.js error:', data);
+                        
+                        if (data.fatal) {
+                            switch (data.type) {
+                                case Hls.ErrorTypes.NETWORK_ERROR:
+                                    statusContent.textContent = 'Network error. Attempting to recover...';
+                                    hls.startLoad();
+                                    break;
+                                case Hls.ErrorTypes.MEDIA_ERROR:
+                                    statusContent.textContent = 'Media error. Attempting to recover...';
+                                    hls.recoverMediaError();
+                                    break;
+                                default:
+                                    statusContent.textContent = 'Fatal error. Please refresh the player.';
+                                    break;
+                            }
+                        }
+                    });
+                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                    // For Safari on iOS/macOS
+                    statusContent.textContent = 'Using native HLS playback';
+                    video.src = streamUrl;
+                    video.addEventListener('loadedmetadata', function() {
+                        video.play().catch(error => {
+                            statusContent.textContent = 'Playback error: ' + error.message;
+                        });
+                    });
+                } else {
+                    statusContent.textContent = 'HLS playback is not supported in your browser.';
+                }
+            }
+            
+            // Check API status
+            async function checkApiStatus() {
+                try {
+                    statusContent.textContent = 'Checking API status...';
+                    const response = await fetch('/health');
+                    const data = await response.json();
+                    statusContent.textContent = 'API Status:\n' + JSON.stringify(data, null, 2);
+                } catch (error) {
+                    statusContent.textContent = 'Error checking API status: ' + error.message;
+                }
+            }
+            
+            // Event listeners
+            playButton.addEventListener('click', initPlayer);
+            
+            refreshButton.addEventListener('click', function() {
+                statusContent.textContent = 'Refreshing stream...';
+                initPlayer();
+            });
+            
+            statsButton.addEventListener('click', checkApiStatus);
+        });
+    </script>
 </body>
 </html> 
