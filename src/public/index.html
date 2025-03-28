@@ -25,7 +25,7 @@
             padding: 20px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
-        video {
+        video, audio {
             width: 100%;
             border-radius: 4px;
             margin-bottom: 20px;
@@ -59,6 +59,47 @@
         .status h3 {
             margin-top: 0;
         }
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            background-color: #f8f8f8;
+            border: 1px solid #ddd;
+            border-bottom: none;
+            margin-right: 5px;
+            border-radius: 4px 4px 0 0;
+        }
+        .tab.active {
+            background-color: #fff;
+            border-bottom: 1px solid #fff;
+            margin-bottom: -1px;
+            font-weight: bold;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
     </style>
     <!-- Include the HLS.js library for HLS playback in browsers -->
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
@@ -67,37 +108,129 @@
     <h1>Time-Shifted Radio Stream Player</h1>
     
     <div class="player-container">
-        <video id="video" controls></video>
-        
-        <div class="controls">
-            <button id="playButton">Play Stream</button>
-            <button id="refreshButton">Refresh Stream</button>
-            <button id="statsButton">Check API Status</button>
+        <div class="tabs">
+            <div class="tab active" data-tab="hls">HLS Playlist</div>
+            <div class="tab" data-tab="segments">Direct Segments</div>
+            <div class="tab" data-tab="status">Stream Status</div>
         </div>
         
-        <p>This player is streaming content with an 8-hour delay from the original broadcast.</p>
+        <div class="tab-content active" id="hls-tab">
+            <video id="video" controls></video>
+            
+            <div class="controls">
+                <button id="playButton">Play Stream</button>
+                <button id="refreshButton">Refresh Stream</button>
+            </div>
+            
+            <p>This player is streaming content with an 8-hour delay from the original broadcast using HLS.</p>
+        </div>
+        
+        <div class="tab-content" id="segments-tab">
+            <audio id="audioPlayer" controls></audio>
+            
+            <div class="form-group">
+                <label for="segmentType">Segment Type:</label>
+                <select id="segmentType">
+                    <option value="current">Current Time (8 hours delayed)</option>
+                    <option value="timestamp">Specific Timestamp</option>
+                    <option value="sequence">Sequence Number</option>
+                </select>
+            </div>
+            
+            <div class="form-group" id="timestampGroup" style="display: none;">
+                <label for="timestamp">Timestamp (ISO format):</label>
+                <input type="datetime-local" id="timestamp" step="1">
+            </div>
+            
+            <div class="form-group" id="sequenceGroup" style="display: none;">
+                <label for="sequence">Sequence Number:</label>
+                <input type="number" id="sequence" min="0" step="1">
+            </div>
+            
+            <div class="controls">
+                <button id="loadSegmentButton">Load Segment</button>
+                <button id="nextSegmentButton">Next Segment</button>
+            </div>
+            
+            <p>Direct segment access allows you to request specific audio segments from the buffer.</p>
+        </div>
+        
+        <div class="tab-content" id="status-tab">
+            <div class="controls">
+                <button id="checkStatusButton">Check Stream Status</button>
+            </div>
+            
+            <div class="status" id="streamStatus">
+                <h3>Stream Status</h3>
+                <div id="statusContent">Click "Check Stream Status" to view the current stream information.</div>
+            </div>
+        </div>
         
         <div class="status" id="status">
-            <h3>Stream Status</h3>
-            <div id="statusContent">Player ready. Click "Play Stream" to begin.</div>
+            <h3>Player Status</h3>
+            <div id="playerStatusContent">Player ready.</div>
         </div>
     </div>
     
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Elements
             const video = document.getElementById('video');
+            const audioPlayer = document.getElementById('audioPlayer');
             const playButton = document.getElementById('playButton');
             const refreshButton = document.getElementById('refreshButton');
-            const statsButton = document.getElementById('statsButton');
+            const playerStatusContent = document.getElementById('playerStatusContent');
             const statusContent = document.getElementById('statusContent');
+            const tabs = document.querySelectorAll('.tab');
+            const tabContents = document.querySelectorAll('.tab-content');
+            const segmentType = document.getElementById('segmentType');
+            const timestampGroup = document.getElementById('timestampGroup');
+            const sequenceGroup = document.getElementById('sequenceGroup');
+            const timestamp = document.getElementById('timestamp');
+            const sequence = document.getElementById('sequence');
+            const loadSegmentButton = document.getElementById('loadSegmentButton');
+            const nextSegmentButton = document.getElementById('nextSegmentButton');
+            const checkStatusButton = document.getElementById('checkStatusButton');
             
-            // Stream URL
+            // Stream URLs
             const streamUrl = '/stream.m3u8';
             let hls = null;
+            let currentSequence = 0;
+            
+            // Tab handling
+            tabs.forEach(tab => {
+                tab.addEventListener('click', function() {
+                    tabs.forEach(t => t.classList.remove('active'));
+                    tabContents.forEach(tc => tc.classList.remove('active'));
+                    
+                    this.classList.add('active');
+                    const tabId = this.getAttribute('data-tab') + '-tab';
+                    document.getElementById(tabId).classList.add('active');
+                });
+            });
+            
+            // Segment type handling
+            segmentType.addEventListener('change', function() {
+                timestampGroup.style.display = 'none';
+                sequenceGroup.style.display = 'none';
+                
+                if (this.value === 'timestamp') {
+                    timestampGroup.style.display = 'block';
+                    // Set default to current time minus 8 hours
+                    const date = new Date();
+                    date.setHours(date.getHours() - 8);
+                    timestamp.value = date.toISOString().slice(0, 19);
+                } else if (this.value === 'sequence') {
+                    sequenceGroup.style.display = 'block';
+                    if (!sequence.value) {
+                        sequence.value = '0';
+                    }
+                }
+            });
             
             // Initialize and play the HLS stream
             function initPlayer() {
-                statusContent.textContent = 'Initializing player...';
+                playerStatusContent.textContent = 'Initializing player...';
                 
                 // If an HLS instance exists, destroy it first
                 if (hls) {
@@ -119,67 +252,139 @@
                     
                     // Handle HLS events
                     hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                        statusContent.textContent = 'Stream loaded successfully. Playback starting...';
+                        playerStatusContent.textContent = 'Stream loaded successfully. Playback starting...';
                         video.play().catch(error => {
-                            statusContent.textContent = 'Playback error: ' + error.message;
+                            playerStatusContent.textContent = 'Playback error: ' + error.message;
                         });
                     });
                     
                     hls.on(Hls.Events.ERROR, function(event, data) {
-                        statusContent.textContent = 'Player error: ' + data.type + ' - ' + data.details;
+                        playerStatusContent.textContent = 'Player error: ' + data.type + ' - ' + data.details;
                         console.error('HLS.js error:', data);
                         
                         if (data.fatal) {
                             switch (data.type) {
                                 case Hls.ErrorTypes.NETWORK_ERROR:
-                                    statusContent.textContent = 'Network error. Attempting to recover...';
+                                    playerStatusContent.textContent = 'Network error. Attempting to recover...';
                                     hls.startLoad();
                                     break;
                                 case Hls.ErrorTypes.MEDIA_ERROR:
-                                    statusContent.textContent = 'Media error. Attempting to recover...';
+                                    playerStatusContent.textContent = 'Media error. Attempting to recover...';
                                     hls.recoverMediaError();
                                     break;
                                 default:
-                                    statusContent.textContent = 'Fatal error. Please refresh the player.';
+                                    playerStatusContent.textContent = 'Fatal error. Please refresh the player.';
                                     break;
                             }
                         }
                     });
                 } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                     // For Safari on iOS/macOS
-                    statusContent.textContent = 'Using native HLS playback';
+                    playerStatusContent.textContent = 'Using native HLS playback';
                     video.src = streamUrl;
                     video.addEventListener('loadedmetadata', function() {
                         video.play().catch(error => {
-                            statusContent.textContent = 'Playback error: ' + error.message;
+                            playerStatusContent.textContent = 'Playback error: ' + error.message;
                         });
                     });
                 } else {
-                    statusContent.textContent = 'HLS playback is not supported in your browser.';
+                    playerStatusContent.textContent = 'HLS playback is not supported in your browser.';
                 }
             }
             
+            // Load a specific segment
+            function loadSegment() {
+                playerStatusContent.textContent = 'Loading segment...';
+                
+                let segmentUrl;
+                
+                switch (segmentType.value) {
+                    case 'current':
+                        segmentUrl = '/segments/current';
+                        break;
+                        
+                    case 'timestamp':
+                        if (!timestamp.value) {
+                            playerStatusContent.textContent = 'Please enter a valid timestamp';
+                            return;
+                        }
+                        const ts = new Date(timestamp.value).getTime();
+                        segmentUrl = `/segments/${ts}`;
+                        break;
+                        
+                    case 'sequence':
+                        if (!sequence.value) {
+                            playerStatusContent.textContent = 'Please enter a valid sequence number';
+                            return;
+                        }
+                        currentSequence = parseInt(sequence.value, 10);
+                        segmentUrl = `/segments/${currentSequence}`;
+                        break;
+                }
+                
+                audioPlayer.src = segmentUrl;
+                audioPlayer.load();
+                
+                audioPlayer.addEventListener('canplaythrough', function onCanPlay() {
+                    playerStatusContent.textContent = 'Segment loaded successfully';
+                    audioPlayer.play();
+                    audioPlayer.removeEventListener('canplaythrough', onCanPlay);
+                }, { once: true });
+                
+                audioPlayer.addEventListener('error', function() {
+                    playerStatusContent.textContent = 'Error loading segment: ' + (audioPlayer.error ? audioPlayer.error.message : 'Unknown error');
+                }, { once: true });
+            }
+            
+            // Load the next segment in sequence
+            function loadNextSegment() {
+                currentSequence++;
+                sequence.value = currentSequence;
+                segmentType.value = 'sequence';
+                segmentType.dispatchEvent(new Event('change'));
+                loadSegment();
+            }
+            
             // Check API status
-            async function checkApiStatus() {
+            async function checkStreamStatus() {
                 try {
-                    statusContent.textContent = 'Checking API status...';
-                    const response = await fetch('/health');
+                    statusContent.textContent = 'Checking stream status...';
+                    const response = await fetch('/stream/status');
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error ${response.status}`);
+                    }
+                    
                     const data = await response.json();
-                    statusContent.textContent = 'API Status:\n' + JSON.stringify(data, null, 2);
+                    statusContent.textContent = JSON.stringify(data, null, 2);
                 } catch (error) {
-                    statusContent.textContent = 'Error checking API status: ' + error.message;
+                    statusContent.textContent = 'Error checking stream status: ' + error.message;
                 }
             }
+            
+            // Set the timestamp input to current time minus 8 hours
+            const defaultDate = new Date();
+            defaultDate.setHours(defaultDate.getHours() - 8);
+            timestamp.value = defaultDate.toISOString().slice(0, 19);
             
             // Event listeners
             playButton.addEventListener('click', initPlayer);
             
             refreshButton.addEventListener('click', function() {
-                statusContent.textContent = 'Refreshing stream...';
+                playerStatusContent.textContent = 'Refreshing stream...';
                 initPlayer();
             });
             
-            statsButton.addEventListener('click', checkApiStatus);
+            loadSegmentButton.addEventListener('click', loadSegment);
+            nextSegmentButton.addEventListener('click', loadNextSegment);
+            checkStatusButton.addEventListener('click', checkStreamStatus);
+            
+            // Handle audio player ended event to auto-load next segment
+            audioPlayer.addEventListener('ended', function() {
+                if (segmentType.value === 'sequence') {
+                    loadNextSegment();
+                }
+            });
         });
     </script>
 </body>
