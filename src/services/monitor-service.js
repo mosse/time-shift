@@ -111,10 +111,11 @@ class MonitorService extends EventEmitter {
   
   /**
    * Fetch the playlist and process new segments
+   * @param {boolean} [checkRunning=true] - Whether to check if the monitor is running
    * @returns {Promise<Object>} - Fetch result
    */
-  async fetchPlaylist() {
-    if (!this.isRunning) {
+  async fetchPlaylist(checkRunning = false) {
+    if (checkRunning && !this.isRunning) {
       return { success: false, error: 'Monitor is not running' };
     }
     

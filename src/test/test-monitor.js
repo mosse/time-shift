@@ -23,8 +23,8 @@ async function testMonitorService() {
     // Test basic playlist fetching
     logger.info(`Testing initial playlist fetch from ${testUrl}`);
     
-    // Perform first fetch to get baseline segments
-    const initialFetch = await monitorService.fetchPlaylist();
+    // Perform first fetch to get baseline segments - pass false to skip the running check
+    const initialFetch = await monitorService.fetchPlaylist(false);
     
     if (!initialFetch.success) {
       throw new Error(`Initial playlist fetch failed: ${initialFetch.error}`);
