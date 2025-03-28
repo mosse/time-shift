@@ -8,6 +8,18 @@ document.addEventListener('DOMContentLoaded', function() {
     const config = {
         autoPlay: false,                // Auto-play disabled by default
         debugMode: false,               // Debug logging
+        defaultVolume: 0.8,             // Default volume (0-1)
+        volumeStep: 0.1,                // Volume change step for keyboard
+        bufferHealthThreshold: {
+            good: 0.8,                  // >80% buffer is good health
+            fair: 0.4,                  // >40% buffer is fair health
+            poor: 0                      // Below that is poor health
+        },
+        streamTimeUpdateInterval: 1000, // Update stream time every second
+        storageKey: {
+            volume: 'timeshift-player-volume',
+            muted: 'timeshift-player-muted'
+        },
         hlsConfig: {
             debug: false,               // HLS.js debug mode
             manifestLoadingMaxRetry: 5, // Maximum number of retries for manifest loading
@@ -43,6 +55,18 @@ document.addEventListener('DOMContentLoaded', function() {
     const loadSegmentButton = document.getElementById('loadSegmentButton');
     const nextSegmentButton = document.getElementById('nextSegmentButton');
     const checkStatusButton = document.getElementById('checkStatusButton');
+    const muteButton = document.getElementById('muteButton');
+    const volumeSlider = document.getElementById('volumeSlider');
+    const playIcon = playButton.querySelector('.play-icon');
+    const bufferingOverlay = document.getElementById('bufferingOverlay');
+    const bufferFill = document.getElementById('bufferFill');
+    const bufferAmount = document.getElementById('bufferAmount');
+    const healthIndicator = document.getElementById('healthIndicator');
+    const streamTime = document.getElementById('streamTime');
+    const connectionStatus = document.getElementById('connectionStatus');
+    const connectionIndicator = document.getElementById('connectionIndicator');
+    const settingsButton = document.getElementById('settingsButton');
+    const keyboardShortcuts = document.querySelector('.keyboard-shortcuts');
     
     // Stream URLs
     const streamUrl = '/stream.m3u8';
@@ -51,6 +75,62 @@ document.addEventListener('DOMContentLoaded', function() {
     let reconnectTimer = null;
     let reconnectAttempts = 0;
     const maxReconnectAttempts = 5;
+    let streamTimeInterval = null;
+    let streamStartTime = null;
+    let isMuted = false;
+    let swipeStartY = 0;
+    let currentVolume = loadVolumeFromStorage();
+    
+    /**
+     * Load volume setting from localStorage
+     */
+    function loadVolumeFromStorage() {
+        const savedVolume = localStorage.getItem(config.storageKey.volume);
+        const savedMuted = localStorage.getItem(config.storageKey.muted);
+        
+        if (savedVolume !== null) {
+            const volume = parseFloat(savedVolume);
+            volumeSlider.value = volume * 100;
+            return volume;
+        } else {
+            volumeSlider.value = config.defaultVolume * 100;
+            return config.defaultVolume;
+        }
+        
+        if (savedMuted === 'true') {
+            isMuted = true;
+            muteButton.classList.add('muted');
+        }
+    }
+    
+    /**
+     * Save volume setting to localStorage
+     */
+    function saveVolumeToStorage(volume) {
+        localStorage.setItem(config.storageKey.volume, volume.toString());
+    }
+    
+    /**
+     * Save mute setting to localStorage
+     */
+    function saveMuteToStorage(muted) {
+        localStorage.setItem(config.storageKey.muted, muted.toString());
+    }
+    
+    /**
+     * Format time in HH:MM:SS format
+     */
+    function formatTime(seconds) {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+        
+        return [
+            hours.toString().padStart(2, '0'),
+            minutes.toString().padStart(2, '0'),
+            secs.toString().padStart(2, '0')
+        ].join(':');
+    }
     
     /**
      * Helper function for logging
@@ -86,6 +166,140 @@ document.addEventListener('DOMContentLoaded', function() {
         playerStatusContent.classList.add(type);
         
         log(message, type === 'error' ? 'error' : 'info');
+    }
+    
+    /**
+     * Update connection status indicator
+     */
+    function updateConnectionStatus(status) {
+        connectionStatus.textContent = status;
+        connectionIndicator.className = 'indicator';
+        
+        switch (status.toLowerCase()) {
+            case 'connected':
+                connectionIndicator.classList.add('connected');
+                break;
+            case 'connecting':
+            case 'buffering':
+                connectionIndicator.classList.add('connecting');
+                break;
+            case 'error':
+                connectionIndicator.classList.add('error');
+                break;
+            default:
+                // Default 'idle' state uses default styling
+                break;
+        }
+    }
+    
+    /**
+     * Start streaming time counter
+     */
+    function startStreamTimeCounter() {
+        if (streamTimeInterval) {
+            clearInterval(streamTimeInterval);
+        }
+        
+        streamStartTime = Date.now();
+        
+        streamTimeInterval = setInterval(() => {
+            const elapsedSeconds = Math.floor((Date.now() - streamStartTime) / 1000);
+            streamTime.textContent = formatTime(elapsedSeconds);
+        }, config.streamTimeUpdateInterval);
+    }
+    
+    /**
+     * Stop streaming time counter
+     */
+    function stopStreamTimeCounter() {
+        if (streamTimeInterval) {
+            clearInterval(streamTimeInterval);
+            streamTimeInterval = null;
+        }
+    }
+    
+    /**
+     * Update buffer health visualization
+     */
+    function updateBufferHealth(percentage) {
+        // Update buffer fill display
+        bufferFill.style.width = `${percentage}%`;
+        bufferAmount.textContent = `${Math.round(percentage)}%`;
+        
+        // Update health indicator
+        healthIndicator.className = 'health-indicator';
+        
+        if (percentage >= config.bufferHealthThreshold.good * 100) {
+            healthIndicator.classList.add('good');
+        } else if (percentage >= config.bufferHealthThreshold.fair * 100) {
+            healthIndicator.classList.add('fair');
+        } else {
+            healthIndicator.classList.add('poor');
+        }
+    }
+    
+    /**
+     * Show or hide buffering overlay
+     */
+    function toggleBufferingOverlay(show) {
+        bufferingOverlay.hidden = !show;
+        
+        if (show) {
+            updateConnectionStatus('Buffering');
+        } else {
+            updateConnectionStatus('Connected');
+        }
+    }
+    
+    /**
+     * Set play/pause button state
+     */
+    function updatePlayButton(isPlaying) {
+        if (isPlaying) {
+            playButton.classList.add('playing');
+            playButton.setAttribute('aria-label', 'Pause Stream');
+        } else {
+            playButton.classList.remove('playing');
+            playButton.setAttribute('aria-label', 'Play Stream');
+        }
+    }
+    
+    /**
+     * Set volume for all media elements
+     */
+    function setVolume(volume) {
+        // Ensure volume is between 0 and 1
+        volume = Math.max(0, Math.min(1, volume));
+        
+        video.volume = volume;
+        audioPlayer.volume = volume;
+        currentVolume = volume;
+        
+        // Update UI
+        volumeSlider.value = volume * 100;
+        
+        // Store the setting
+        saveVolumeToStorage(volume);
+        
+        return volume;
+    }
+    
+    /**
+     * Handle mute toggle
+     */
+    function toggleMute() {
+        isMuted = !isMuted;
+        
+        video.muted = isMuted;
+        audioPlayer.muted = isMuted;
+        
+        if (isMuted) {
+            muteButton.classList.add('muted');
+        } else {
+            muteButton.classList.remove('muted');
+        }
+        
+        saveMuteToStorage(isMuted);
     }
     
     // Tab handling
@@ -161,6 +375,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function handleReconnect() {
         if (reconnectAttempts >= maxReconnectAttempts) {
             updateStatus(`Maximum reconnection attempts reached (${maxReconnectAttempts}). Please try refreshing manually.`, 'error');
+            updateConnectionStatus('Error');
             cancelReconnect();
             return;
         }
@@ -169,6 +384,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const delay = Math.min(1000 * Math.pow(1.5, reconnectAttempts), 10000); // Exponential backoff with 10s max
         updateStatus(`Connection lost. Reconnecting in ${Math.round(delay/1000)}s (attempt ${reconnectAttempts}/${maxReconnectAttempts})...`, 'warn');
+        updateConnectionStatus('Connecting');
         
         reconnectTimer = setTimeout(() => {
             updateStatus(`Attempting to reconnect (${reconnectAttempts}/${maxReconnectAttempts})...`);
@@ -181,13 +397,24 @@ document.addEventListener('DOMContentLoaded', function() {
      */
     function initPlayer() {
         updateStatus('Initializing player...');
+        updateConnectionStatus('Connecting');
         cancelReconnect();
+        stopStreamTimeCounter();
+        toggleBufferingOverlay(false);
         
         // If an HLS instance exists, destroy it first
         if (hls) {
             hls.destroy();
             hls = null;
         }
+        
+        // Set initial volume
+        setVolume(currentVolume);
+        video.muted = isMuted;
+        audioPlayer.muted = isMuted;
+        
+        // Reset buffer health display
+        updateBufferHealth(0);
         
         // Check if HLS.js is supported
         if (Hls.isSupported()) {
@@ -205,6 +432,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 log('Media element detached', 'debug');
             });
             
+            hls.on(Hls.Events.MANIFEST_LOADING, function() {
+                toggleBufferingOverlay(true);
+                updateStatus('Loading stream manifest...');
+            });
+            
             hls.on(Hls.Events.MANIFEST_LOADED, function(event, data) {
                 log('Manifest loaded', 'debug');
                 updateStatus('Stream manifest loaded. Parsing...');
@@ -213,10 +445,13 @@ document.addEventListener('DOMContentLoaded', function() {
             hls.on(Hls.Events.MANIFEST_PARSED, function(event, data) {
                 log(`Manifest parsed. ${data.levels.length} quality levels found.`, 'debug');
                 updateStatus(`Stream ready. ${data.levels.length} quality levels available.`);
+                toggleBufferingOverlay(false);
                 
                 if (config.autoPlay) {
                     video.play().then(() => {
                         updateStatus('Playback started automatically');
+                        updatePlayButton(true);
+                        startStreamTimeCounter();
                     }).catch(error => {
                         updateStatus(`Autoplay prevented: ${error.message}. Click play to start.`, 'warn');
                     });
@@ -227,6 +462,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             hls.on(Hls.Events.LEVEL_LOADED, function(event, data) {
                 log(`Level ${data.level} loaded. ${data.details.totalduration}s duration.`, 'debug');
+                updateConnectionStatus('Connected');
             });
             
             hls.on(Hls.Events.LEVEL_SWITCHED, function(event, data) {
@@ -239,10 +475,27 @@ document.addEventListener('DOMContentLoaded', function() {
             
             hls.on(Hls.Events.FRAG_LOADED, function(event, data) {
                 log(`Fragment ${data.frag.sn} loaded`, 'debug');
+                toggleBufferingOverlay(false);
             });
             
             hls.on(Hls.Events.FRAG_CHANGED, function(event, data) {
                 log(`Fragment changed to ${data.frag.sn}`, 'debug');
+            });
+            
+            hls.on(Hls.Events.BUFFER_CREATED, function(event, data) {
+                log('Buffer created', 'debug');
+            });
+            
+            hls.on(Hls.Events.BUFFER_APPENDING, function(event, data) {
+                log(`Buffer appending ${data.type}`, 'debug');
+            });
+            
+            hls.on(Hls.Events.BUFFER_APPENDED, function(event, data) {
+                log(`Buffer appended ${data.type}`, 'debug');
+                // Update buffer health
+                const bufferInfo = hls.mainForwardBufferInfo || { len: 0 };
+                const bufferPercentage = Math.min(100, (bufferInfo.len / 30) * 100); // 30 seconds as 100%
+                updateBufferHealth(bufferPercentage);
             });
             
             hls.on(Hls.Events.ERROR, function(event, data) {
@@ -251,6 +504,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         case Hls.ErrorTypes.NETWORK_ERROR:
                             log(`Fatal network error: ${data.details}`, 'error');
                             updateStatus(`Network error: ${data.details}. Attempting to recover...`, 'error');
+                            updateConnectionStatus('Error');
                             
                             // Try to recover network error or schedule reconnect
                             if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || 
@@ -270,6 +524,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         default:
                             log(`Fatal error: ${data.type} - ${data.details}`, 'error');
                             updateStatus(`Fatal error: ${data.details}. Cannot recover.`, 'error');
+                            updateConnectionStatus('Error');
                             hls.destroy();
                             break;
                     }
@@ -285,18 +540,30 @@ document.addEventListener('DOMContentLoaded', function() {
             // Add player event listeners
             video.addEventListener('play', function() {
                 updateStatus('Playback started');
+                updatePlayButton(true);
+                updateConnectionStatus('Connected');
+                startStreamTimeCounter();
             });
             
             video.addEventListener('pause', function() {
                 updateStatus('Playback paused');
+                updatePlayButton(false);
+                stopStreamTimeCounter();
             });
             
             video.addEventListener('waiting', function() {
                 updateStatus('Buffering...', 'warn');
+                toggleBufferingOverlay(true);
+            });
+            
+            video.addEventListener('playing', function() {
+                toggleBufferingOverlay(false);
             });
             
             video.addEventListener('ended', function() {
                 updateStatus('Playback ended');
+                updatePlayButton(false);
+                stopStreamTimeCounter();
             });
             
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -308,13 +575,27 @@ document.addEventListener('DOMContentLoaded', function() {
             
             video.addEventListener('loadedmetadata', function() {
                 updateStatus('Stream loaded successfully. Ready to play.');
+                updateConnectionStatus('Connected');
+                toggleBufferingOverlay(false);
                 
                 if (config.autoPlay) {
                     video.play().then(() => {
                         updateStatus('Playback started automatically');
+                        updatePlayButton(true);
+                        startStreamTimeCounter();
                     }).catch(error => {
                         updateStatus(`Autoplay prevented: ${error.message}. Click play to start.`, 'warn');
                     });
+                }
+            });
+            
+            video.addEventListener('progress', function() {
+                // Calculate buffer health for native players
+                if (video.buffered.length > 0) {
+                    const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+                    const duration = video.duration || 30; // fallback to 30s if duration unknown
+                    const bufferPercentage = Math.min(100, (bufferedEnd / Math.min(duration, 30)) * 100);
+                    updateBufferHealth(bufferPercentage);
                 }
             });
             
@@ -324,14 +605,45 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 log(`Video playback error: ${errorCode} - ${errorMessage}`, 'error');
                 updateStatus(`Playback error: ${errorMessage}`, 'error');
+                updateConnectionStatus('Error');
                 
                 // Handle reconnection
                 handleReconnect();
+            });
+            
+            // Add event listeners for play/pause state
+            video.addEventListener('play', function() {
+                updateStatus('Playback started');
+                updatePlayButton(true);
+                updateConnectionStatus('Connected');
+                startStreamTimeCounter();
+            });
+            
+            video.addEventListener('pause', function() {
+                updateStatus('Playback paused');
+                updatePlayButton(false);
+                stopStreamTimeCounter();
+            });
+            
+            video.addEventListener('waiting', function() {
+                updateStatus('Buffering...', 'warn');
+                toggleBufferingOverlay(true);
+            });
+            
+            video.addEventListener('playing', function() {
+                toggleBufferingOverlay(false);
+            });
+            
+            video.addEventListener('ended', function() {
+                updateStatus('Playback ended');
+                updatePlayButton(false);
+                stopStreamTimeCounter();
             });
         } else {
             // HLS is not supported at all
             log('HLS playback is not supported in this browser', 'error');
             updateStatus('HLS playback is not supported in your browser. Please try a different browser like Chrome, Firefox, or Safari.', 'error');
+            updateConnectionStatus('Error');
         }
     }
     
@@ -347,14 +659,16 @@ document.addEventListener('DOMContentLoaded', function() {
         if (video.paused) {
             video.play().then(() => {
                 updateStatus('Playback started');
-                playButton.textContent = 'Pause Stream';
+                updatePlayButton(true);
+                startStreamTimeCounter();
             }).catch(error => {
                 updateStatus(`Playback error: ${error.message}`, 'error');
             });
         } else {
             video.pause();
             updateStatus('Playback paused');
-            playButton.textContent = 'Play Stream';
+            updatePlayButton(false);
+            stopStreamTimeCounter();
         }
     }
     
@@ -442,18 +756,79 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
+    /**
+     * Toggle keyboard shortcuts display
+     */
+    function toggleKeyboardShortcuts() {
+        keyboardShortcuts.hidden = !keyboardShortcuts.hidden;
+    }
+    
+    /**
+     * Handle touch-based volume control (swipe up/down on player)
+     */
+    function setupMobileGestures() {
+        const videoContainer = document.querySelector('.video-container');
+        
+        videoContainer.addEventListener('touchstart', function(e) {
+            if (e.touches.length === 1) {
+                // Store the starting Y position for vertical swipe detection
+                swipeStartY = e.touches[0].clientY;
+            }
+        }, { passive: true });
+        
+        videoContainer.addEventListener('touchmove', function(e) {
+            // Only process for single touch point
+            if (e.touches.length !== 1) return;
+            
+            // Calculate vertical displacement
+            const deltaY = swipeStartY - e.touches[0].clientY;
+            
+            // If significant vertical movement detected, adjust volume
+            if (Math.abs(deltaY) > 20) {
+                e.preventDefault(); // Prevent page scrolling
+                
+                // Calculate volume adjustment - sensitivity factor makes it less aggressive
+                const sensitivity = 0.005; 
+                const volumeChange = deltaY * sensitivity;
+                
+                // Apply the volume change
+                setVolume(currentVolume + volumeChange);
+                
+                // Update starting position to make the gesture continuous
+                swipeStartY = e.touches[0].clientY;
+            }
+        }, { passive: false });
+    }
+    
     // Set the timestamp input to current time minus 8 hours
     const defaultDate = new Date();
     defaultDate.setHours(defaultDate.getHours() - 8);
     timestamp.value = defaultDate.toISOString().slice(0, 19);
     
-    // Event listeners
+    // Initialize UI elements
+    updatePlayButton(false);
+    updateConnectionStatus('Idle');
+    toggleBufferingOverlay(false);
+    if (isMuted) {
+        muteButton.classList.add('muted');
+    }
+    
+    // Event listeners for player controls
     playButton.addEventListener('click', togglePlayback);
     
     refreshButton.addEventListener('click', function() {
         updateStatus('Refreshing stream...');
         initPlayer();
     });
+    
+    muteButton.addEventListener('click', toggleMute);
+    
+    volumeSlider.addEventListener('input', function() {
+        const volume = parseInt(this.value, 10) / 100;
+        setVolume(volume);
+    });
+    
+    settingsButton.addEventListener('click', toggleKeyboardShortcuts);
     
     loadSegmentButton.addEventListener('click', loadSegment);
     nextSegmentButton.addEventListener('click', loadNextSegment);
@@ -466,14 +841,61 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // Debug mode toggle (using keyboard shortcut Ctrl+Shift+D)
+    // Global keyboard shortcuts
     document.addEventListener('keydown', function(e) {
-        if (e.ctrlKey && e.shiftKey && e.key === 'D') {
-            config.debugMode = !config.debugMode;
-            log(`Debug mode ${config.debugMode ? 'enabled' : 'disabled'}`, 'info');
-            updateStatus(`Debug mode ${config.debugMode ? 'enabled' : 'disabled'}`);
+        // Only handle shortcuts when not inside an input field
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+            return;
+        }
+        
+        switch (e.key) {
+            case ' ': // Space
+                e.preventDefault();
+                togglePlayback();
+                break;
+                
+            case 'ArrowUp': // Up arrow
+                e.preventDefault();
+                setVolume(currentVolume + config.volumeStep);
+                break;
+                
+            case 'ArrowDown': // Down arrow
+                e.preventDefault();
+                setVolume(currentVolume - config.volumeStep);
+                break;
+                
+            case 'm': // M key
+            case 'M': // Shift+M
+                e.preventDefault();
+                toggleMute();
+                break;
+                
+            case 'r': // R key
+            case 'R': // Shift+R
+                e.preventDefault();
+                initPlayer();
+                break;
+                
+            case 'k': // K key
+            case 'K': // Shift+K
+                e.preventDefault();
+                toggleKeyboardShortcuts();
+                break;
+                
+            case 'd': // D key (Debug mode toggle)
+            case 'D': // Shift+D
+                if (e.ctrlKey && e.shiftKey) {
+                    e.preventDefault();
+                    config.debugMode = !config.debugMode;
+                    log(`Debug mode ${config.debugMode ? 'enabled' : 'disabled'}`, 'info');
+                    updateStatus(`Debug mode ${config.debugMode ? 'enabled' : 'disabled'}`);
+                }
+                break;
         }
     });
+    
+    // Setup mobile/touch gestures
+    setupMobileGestures();
     
     // Initialize player if auto-play is enabled
     if (config.autoPlay) {

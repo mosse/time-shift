@@ -19,6 +19,20 @@
         
         <main>
             <div class="player-container">
+                <div class="station-info">
+                    <div class="station-logo">
+                        <div class="radio-wave"></div>
+                    </div>
+                    <div class="station-details">
+                        <h2 id="stationName">Delay Radio</h2>
+                        <p id="stationDescription">Streaming content with an 8-hour delay</p>
+                    </div>
+                    <div class="connection-status">
+                        <span id="connectionIndicator" class="indicator"></span>
+                        <span id="connectionStatus">Idle</span>
+                    </div>
+                </div>
+
                 <div class="tabs" role="tablist">
                     <div class="tab active" role="tab" aria-selected="true" aria-controls="hls-tab" tabindex="0" data-tab="hls">HLS Playlist</div>
                     <div class="tab" role="tab" aria-selected="false" aria-controls="segments-tab" tabindex="-1" data-tab="segments">Direct Segments</div>
@@ -26,11 +40,71 @@
                 </div>
                 
                 <div class="tab-content active" id="hls-tab" role="tabpanel" aria-labelledby="hls-tab">
-                    <video id="video" controls aria-label="HLS video player"></video>
+                    <div class="video-container">
+                        <video id="video" controls aria-label="HLS video player"></video>
+                        <div id="bufferingOverlay" class="buffering-overlay" hidden>
+                            <div class="spinner"></div>
+                            <div id="bufferingText">Buffering...</div>
+                        </div>
+                    </div>
                     
-                    <div class="controls">
-                        <button id="playButton" aria-label="Play Stream">Play Stream</button>
-                        <button id="refreshButton" aria-label="Refresh Stream">Refresh Stream</button>
+                    <div class="player-controls">
+                        <div class="playback-controls">
+                            <button id="playButton" aria-label="Play Stream" class="play-button">
+                                <span class="play-icon"></span>
+                            </button>
+                            
+                            <div class="volume-container">
+                                <button id="muteButton" aria-label="Mute" class="mute-button">
+                                    <span class="volume-icon"></span>
+                                </button>
+                                <div class="volume-slider-container">
+                                    <input type="range" id="volumeSlider" min="0" max="100" value="100" step="1" aria-label="Volume" class="volume-slider">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="stream-info">
+                            <div class="time-display">
+                                <span id="streamTime">00:00:00</span>
+                                <span class="time-label">Stream Time</span>
+                            </div>
+                            
+                            <div class="buffer-status">
+                                <div class="buffer-meter">
+                                    <div id="bufferFill" class="buffer-fill" style="width: 0%"></div>
+                                </div>
+                                <span class="buffer-label">Buffer: <span id="bufferAmount">0%</span></span>
+                            </div>
+                            
+                            <div class="stream-health">
+                                <div id="healthIndicator" class="health-indicator">
+                                    <div class="health-bar"></div>
+                                    <div class="health-bar"></div>
+                                    <div class="health-bar"></div>
+                                </div>
+                                <span class="health-label">Stream Health</span>
+                            </div>
+                        </div>
+                        
+                        <div class="secondary-controls">
+                            <button id="refreshButton" aria-label="Refresh Stream">Refresh Stream</button>
+                            <button id="settingsButton" aria-label="Settings" class="settings-button">
+                                <span class="settings-icon"></span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="keyboard-shortcuts" hidden>
+                        <h3>Keyboard Shortcuts</h3>
+                        <ul>
+                            <li><kbd>Space</kbd> Play/Pause</li>
+                            <li><kbd>↑</kbd> Volume Up</li>
+                            <li><kbd>↓</kbd> Volume Down</li>
+                            <li><kbd>M</kbd> Mute/Unmute</li>
+                            <li><kbd>R</kbd> Refresh Stream</li>
+                            <li><kbd>K</kbd> Show/Hide Keyboard Shortcuts</li>
+                        </ul>
                     </div>
                     
                     <p>This player is streaming content with an 8-hour delay from the original broadcast using HLS.</p>
