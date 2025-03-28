@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time-Shift Radio</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        h1 {
+            color: #0066cc;
+        }
+        .description {
+            font-size: 18px;
+            margin-bottom: 30px;
+        }
+        .info-panel {
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .api-endpoint {
+            background-color: #e9f5ff;
+            border-left: 4px solid #0066cc;
+            padding: 10px 15px;
+            margin-bottom: 10px;
+        }
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Time-Shift Radio</h1>
+        <p class="description">Access radio streams with time-shifting capabilities</p>
+    </header>
+
+    <div class="info-panel">
+        <h2>About the Service</h2>
+        <p>Time-Shift Radio allows you to listen to radio streams with a time delay, giving you the ability to pause, rewind, and catch up on content you might have missed.</p>
+    </div>
+
+    <h2>API Endpoints</h2>
+    <div class="api-endpoint">
+        <strong>GET /health</strong>
+        <p>Check the health status of the service.</p>
+    </div>
+    <div class="api-endpoint">
+        <strong>GET /stats</strong>
+        <p>Get detailed statistics about the buffer and system status.</p>
+    </div>
+    <div class="api-endpoint">
+        <strong>GET /stream</strong>
+        <p>Access the time-shifted stream (coming soon).</p>
+    </div>
+
+    <div class="info-panel">
+        <h2>Current Status</h2>
+        <p>Fetch the current service status from the <a href="/health">health endpoint</a> or check <a href="/stats">detailed statistics</a>.</p>
+    </div>
+
+    <footer>
+        <p>Time-Shift Radio - Version 1.0.0</p>
+    </footer>
+</body>
+</html> 
