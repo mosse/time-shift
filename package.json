@@ -15,7 +15,8 @@
     "test:buffer-extended": "node src/test/test-buffer-extended.js",
     "test:downloader": "node src/test/test-downloader.js",
     "test:downloader-enhanced": "node src/test/test-downloader-enhanced.js",
-    "test:monitor": "node src/test/test-monitor.js"
+    "test:monitor": "node src/test/test-monitor.js",
+    "test:pipeline": "node src/test/test-acquisition-pipeline.js"
   },
   "keywords": [
     "radio",

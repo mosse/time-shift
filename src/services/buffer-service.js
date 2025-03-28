@@ -1,12 +1,16 @@
 const config = require('../config/config');
 const logger = require('../utils/logger');
+const EventEmitter = require('events');
 
 /**
  * Buffer service for storing and managing media segments
  * Implements a circular buffer with timestamp-based access
+ * Emits events for segment lifecycle management
  */
-class BufferService {
+class BufferService extends EventEmitter {
   constructor(bufferDuration = config.BUFFER_DURATION) {
+    super(); // Initialize EventEmitter
+    
     this.bufferDuration = bufferDuration;
     this.segments = [];
     this.segmentsByTimestamp = new Map();
@@ -15,6 +19,50 @@ class BufferService {
     this.totalDuration = 0;
     
     logger.info(`Initialized buffer service with duration: ${bufferDuration}ms`);
+  }
+  
+  /**
+   * Initialize the buffer service
+   * @param {Object} [options] - Configuration options
+   */
+  initialize(options = {}) {
+    // Apply configuration if provided
+    if (options.duration) {
+      this.bufferDuration = options.duration;
+    }
+    
+    // Clear any existing data
+    this.clear();
+    
+    // Set up automatic cleanup
+    this.setupCleanupInterval();
+    
+    logger.info(`Initialized buffer service with duration: ${this.bufferDuration}ms`);
+    
+    // Emit initialized event
+    this.emit('initialized', {
+      duration: this.bufferDuration,
+    });
+    
+    return this;
+  }
+  
+  /**
+   * Set up automatic cleanup interval
+   */
+  setupCleanupInterval() {
+    // Clear existing interval if any
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
+    
+    // Schedule cleanup every minute
+    this.cleanupInterval = setInterval(() => {
+      this.removeExpiredSegments();
+    }, 60000); // 1 minute
+    
+    // Ensure the interval doesn't keep the process alive
+    this.cleanupInterval.unref();
   }
   
   /**
@@ -66,6 +114,14 @@ class BufferService {
       
       // Prune old segments if needed
       this._pruneOldSegments();
+      
+      // Emit segment added event
+      this.emit('segmentAdded', {
+        segmentId: metadata.url,
+        size: segment.size,
+        timestamp: segment.timestamp,
+        metadata
+      });
       
       return segment;
     } catch (error) {
@@ -347,7 +403,83 @@ class BufferService {
     
     logger.info(`Pruned ${segmentsToRemove.length} segments older than ${new Date(cutoffTime).toISOString()}`);
     
+    // Emit segment removed event
+    this.emit('segmentRemoved', {
+      segmentId: segmentsToRemove.map(s => s.metadata.url).join(', '),
+      size: segmentsToRemove.reduce((total, s) => total + s.size, 0),
+      metadata: segmentsToRemove.map(s => ({
+        url: s.metadata.url,
+        duration: s.metadata.duration,
+        addedAt: s.metadata.addedAt
+      }))
+    });
+    
     return segmentsToRemove.length;
+  }
+  
+  /**
+   * Remove expired segments from the buffer
+   * @returns {number} - Number of segments removed
+   */
+  removeExpiredSegments() {
+    const now = Date.now();
+    let removedCount = 0;
+    
+    for (const [segmentId, timestamp] of this.segmentsByTimestamp.entries()) {
+      // If segment is older than buffer duration, remove it
+      if (now - timestamp > this.bufferDuration) {
+        logger.debug(`Segment expired: ${segmentId} (${now - timestamp}ms old)`);
+        this.removeSegment(segmentId);
+        
+        // Emit segment expired event
+        this.emit('segmentExpired', {
+          segmentId,
+          age: now - timestamp
+        });
+        
+        removedCount++;
+      }
+    }
+    
+    if (removedCount > 0) {
+      logger.info(`Removed ${removedCount} expired segments from buffer`);
+    }
+    
+    return removedCount;
+  }
+  
+  /**
+   * Remove a segment from the buffer
+   * @param {string} segmentId - Segment ID
+   * @returns {boolean} - True if segment was removed, false if not found
+   */
+  removeSegment(segmentId) {
+    if (!this.segmentsByTimestamp.has(segmentId)) {
+      return false;
+    }
+    
+    // Get the segment size before removing
+    const segmentSize = this.segmentsByTimestamp.get(segmentId).size;
+    const metadata = this.segmentsByTimestamp.get(segmentId).metadata;
+    
+    // Remove the segment
+    this.segmentsByTimestamp.delete(segmentId);
+    if (metadata.sequenceNumber !== undefined) {
+      this.segmentsBySequence.delete(metadata.sequenceNumber);
+    }
+    this.totalSize -= segmentSize;
+    this.totalDuration -= metadata.duration;
+    
+    logger.debug(`Removed segment from buffer: ${segmentId}`);
+    
+    // Emit segment removed event
+    this.emit('segmentRemoved', {
+      segmentId,
+      size: segmentSize,
+      metadata
+    });
+    
+    return true;
   }
   
   /**
@@ -360,6 +492,12 @@ class BufferService {
     this.totalSize = 0;
     this.totalDuration = 0;
     logger.info('Buffer cleared');
+    
+    // Emit buffer cleared event
+    this.emit('bufferCleared', {
+      previousCount: this.segments.length,
+      previousBytes: this.totalSize
+    });
   }
 }
 

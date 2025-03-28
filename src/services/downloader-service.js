@@ -1,610 +1,602 @@
 const axios = require('axios');
-const { bufferService } = require('./buffer-service');
+const EventEmitter = require('events');
 const logger = require('../utils/logger');
-
-// Error categories for better error handling
-const ErrorCategory = {
-  NETWORK: 'network',       // Network connectivity issues
-  SERVER: 'server',         // Server errors (5xx)
-  CLIENT: 'client',         // Client errors (4xx)
-  TIMEOUT: 'timeout',       // Request timeouts
-  CONTENT: 'content',       // Content/parsing errors
-  UNKNOWN: 'unknown'        // Uncategorized errors
-};
+const { bufferService } = require('./buffer-service');
 
 /**
- * Service for downloading media segments and storing them in the buffer
+ * Enhanced Segment Downloader Service with retry logic, event emissions, and full integration
+ * Handles downloading of HLS segments and storing them in the buffer
  */
-class DownloaderService {
-  constructor(options = {}) {
-    this.defaultTimeout = options.timeout || 10000; // 10 seconds default
-    this.maxRetries = options.maxRetries || 3;
-    this.initialRetryDelay = options.retryDelay || 1000;
-    this.maxRetryDelay = options.maxRetryDelay || 30000;
-    this.retryBackoffFactor = options.retryBackoffFactor || 2;
+class DownloaderService extends EventEmitter {
+  constructor() {
+    super();
     
-    // Download tracking
-    this.downloadedSegments = new Map(); // url -> download info
-    this.downloadHistory = [];
+    // Defaults
+    this.maxRetries = 3;
+    this.retryDelayBase = 1000; // Base delay in ms
+    this.maxRetryDelay = 30000; // Max delay in ms
+    this.maxConcurrentDownloads = 3;
+    this.downloadHistory = new Map(); // Maps URLs to download results
+    this.downloadQueue = [];
+    this.activeDownloads = 0;
+    this.bufferService = null;
+    this.isInitialized = false;
+    this.pendingDownloads = new Set(); // Track in-progress downloads
     
-    // Performance metrics
-    this.stats = this._createEmptyStats();
-    
-    logger.info('Initialized downloader service');
-  }
-  
-  /**
-   * Download a segment from a URL and store it in the buffer
-   * @param {string} url - The URL of the segment to download
-   * @param {Object} metadata - Metadata about the segment
-   * @param {number} [metadata.sequenceNumber] - The sequence number in the playlist
-   * @param {number} [metadata.duration] - The duration of the segment in seconds
-   * @param {number} [timeout] - Optional timeout in ms for this specific request
-   * @param {boolean} [force=false] - Force download even if already downloaded
-   * @returns {Promise<Object>} - Information about the download
-   */
-  async downloadSegment(url, metadata = {}, timeout = this.defaultTimeout, force = false) {
-    const startTime = Date.now();
-    let retries = 0;
-    let totalBytes = 0;
-    let partialContent = null;
-    
-    // Generate a request ID for tracking this download
-    const requestId = `req_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    
-    // Check if segment has already been downloaded
-    if (!force && this.hasDownloadedSegment(url)) {
-      logger.info(`[${requestId}] Segment already downloaded: ${url}`);
-      
-      // Update metrics
-      this.stats.skippedDownloads++;
-      
-      // Return the segment if it's still in the buffer
-      const segment = this._getSegmentFromBuffer(url);
-      if (segment) {
-        return {
-          success: true,
-          url,
-          size: segment.size,
-          durationMs: 0,
-          httpStatus: 200,
-          segment,
-          fromCache: true
-        };
-      }
-      
-      // If the segment is no longer in the buffer, re-download it
-      logger.info(`[${requestId}] Segment not found in buffer, re-downloading: ${url}`);
-    }
-    
-    logger.info(`[${requestId}] Starting download: ${url}`);
-    
-    // Track this download
-    this.stats.totalDownloads++;
-    
-    while (true) {
-      try {
-        // Calculate retry delay with exponential backoff
-        const retryDelay = this._calculateRetryDelay(retries);
-        
-        // Prepare headers for the request
-        const headers = {
-          'Accept': '*/*',
-          'User-Agent': 'time-shift-radio/1.0.0'
-        };
-        
-        // If we have partial content from a previous attempt, set Range header
-        if (partialContent) {
-          headers['Range'] = `bytes=${partialContent.byteLength}-`;
-          logger.info(`[${requestId}] Resuming download from byte ${partialContent.byteLength}`);
-        }
-        
-        // Make the request with appropriate headers for binary data
-        const response = await axios.get(url, {
-          timeout,
-          responseType: 'arraybuffer',
-          headers
-        });
-        
-        // Check if response is valid
-        if (!response.data || response.data.byteLength === 0) {
-          throw this._createError('Empty response received', ErrorCategory.CONTENT);
-        }
-        
-        let finalData;
-        
-        // Handle partial content
-        if (response.status === 206) {
-          logger.info(`[${requestId}] Received partial content (${response.data.byteLength} bytes)`);
-          
-          // Combine with previous partial content if exists
-          if (partialContent) {
-            const combinedBuffer = new Uint8Array(partialContent.byteLength + response.data.byteLength);
-            combinedBuffer.set(new Uint8Array(partialContent), 0);
-            combinedBuffer.set(new Uint8Array(response.data), partialContent.byteLength);
-            finalData = combinedBuffer.buffer;
-          } else {
-            finalData = response.data;
-          }
-        } else {
-          finalData = response.data;
-        }
-        
-        // Prepare metadata for buffer storage
-        const segmentMetadata = {
-          url,
-          sequenceNumber: metadata.sequenceNumber,
-          duration: metadata.duration || 0,
-          contentType: response.headers['content-type'],
-          contentLength: response.headers['content-length'],
-          httpStatus: response.status,
-          downloadTime: Date.now() - startTime,
-          downloadDate: new Date().toISOString()
-        };
-        
-        // Store segment in buffer
-        const segment = bufferService.addSegment(finalData, segmentMetadata);
-        
-        // Calculate bandwidth in kbps
-        const durationMs = Date.now() - startTime;
-        const durationSec = durationMs / 1000;
-        const bytes = finalData.byteLength;
-        const kbps = durationSec > 0 ? Math.round((bytes * 8) / durationSec / 1000) : 0;
-        
-        const result = {
-          success: true,
-          url,
-          size: bytes,
-          durationMs,
-          bandwidthKbps: kbps,
-          httpStatus: response.status,
-          segment,
-          resumedDownload: !!partialContent
-        };
-        
-        // Track the downloaded segment
-        this._trackDownloadedSegment(url, result);
-        
-        // Update metrics
-        this.stats.successfulDownloads++;
-        this.stats.totalBytes += bytes;
-        this.stats.totalDuration += durationMs;
-        this.stats.averageDownloadTime = this.stats.totalDuration / this.stats.successfulDownloads;
-        this.stats.averageBandwidthKbps = this.stats.successfulDownloads > 0 ? 
-          Math.round((this.stats.totalBytes * 8) / (this.stats.totalDuration / 1000) / 1000) : 0;
-        
-        logger.info(`[${requestId}] Successfully downloaded segment: ${url} (${result.size} bytes in ${result.durationMs}ms, ${kbps} kbps)`);
-        
-        return result;
-      } catch (error) {
-        retries++;
-        
-        // Handle axios error
-        const errorCategory = this._categorizeError(error);
-        const errorInfo = {
-          message: error.message,
-          status: error.response?.status,
-          statusText: error.response?.statusText,
-          code: error.code,
-          category: errorCategory
-        };
-        
-        // For some errors like server overload or network issues, we can retry
-        // For other errors like 404, there's no point retrying
-        const isRetryable = this._isRetryableError(errorCategory, error.response?.status);
-        
-        // If we have a partial response that was cut off, save it for resuming
-        if (error.response && error.response.data && error.response.data.byteLength > 0) {
-          partialContent = error.response.data;
-          totalBytes += partialContent.byteLength;
-          logger.info(`[${requestId}] Saved ${partialContent.byteLength} bytes of partial content for resume`);
-        }
-        
-        if (!isRetryable || retries > this.maxRetries) {
-          const reason = !isRetryable ? 'non-retryable error' : `exceeded max retries (${this.maxRetries})`;
-          logger.error(`[${requestId}] Failed to download segment (${reason}): ${url}`, errorInfo);
-          
-          // Update metrics
-          this.stats.failedDownloads++;
-          this.stats.errorsByCategory[errorCategory] = (this.stats.errorsByCategory[errorCategory] || 0) + 1;
-          
-          // Track failed download
-          this._trackFailedDownload(url, errorInfo);
-          
-          return {
-            success: false,
-            url,
-            error: errorInfo,
-            durationMs: Date.now() - startTime,
-            attempts: retries,
-            partialBytes: totalBytes
-          };
-        }
-        
-        const retryDelay = this._calculateRetryDelay(retries);
-        logger.warn(`[${requestId}] Attempt ${retries}/${this.maxRetries} failed: ${error.message} (${errorCategory}). Retrying in ${retryDelay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-      }
-    }
-  }
-  
-  /**
-   * Check if a segment has already been downloaded
-   * @param {string} url - The URL of the segment
-   * @returns {boolean} - True if the segment has been downloaded
-   */
-  hasDownloadedSegment(url) {
-    return this.downloadedSegments.has(url);
-  }
-  
-  /**
-   * Get a downloaded segment from the buffer by URL
-   * @param {string} url - The URL of the segment
-   * @returns {Object|null} - The segment or null if not found
-   * @private
-   */
-  _getSegmentFromBuffer(url) {
-    // Attempt to find the segment in the buffer by checking all segments
-    // This is a bit inefficient and could be improved with a url->segment index
-    const bufferStats = bufferService.getBufferStats();
-    
-    if (bufferStats.isEmpty) {
-      return null;
-    }
-    
-    for (let i = bufferStats.sequenceRange.start; i <= bufferStats.sequenceRange.end; i++) {
-      const segment = bufferService.getSegmentBySequence(i);
-      if (segment && segment.metadata.url === url) {
-        return segment;
-      }
-    }
-    
-    return null;
-  }
-  
-  /**
-   * Track a successfully downloaded segment
-   * @param {string} url - The URL of the segment
-   * @param {Object} result - The download result
-   * @private
-   */
-  _trackDownloadedSegment(url, result) {
-    const downloadInfo = {
-      url,
-      timestamp: Date.now(),
-      size: result.size,
-      durationMs: result.durationMs,
-      bandwidthKbps: result.bandwidthKbps,
-      sequenceNumber: result.segment.metadata.sequenceNumber
-    };
-    
-    this.downloadedSegments.set(url, downloadInfo);
-    this.downloadHistory.push(downloadInfo);
-    
-    // Limit history size to avoid memory leaks
-    if (this.downloadHistory.length > 1000) {
-      this.downloadHistory.shift();
-    }
-  }
-  
-  /**
-   * Track a failed download attempt
-   * @param {string} url - The URL of the segment
-   * @param {Object} error - The error information
-   * @private
-   */
-  _trackFailedDownload(url, error) {
-    const failedInfo = {
-      url,
-      timestamp: Date.now(),
-      error: error,
-      isFailure: true
-    };
-    
-    this.downloadHistory.push(failedInfo);
-    
-    // Limit history size to avoid memory leaks
-    if (this.downloadHistory.length > 1000) {
-      this.downloadHistory.shift();
-    }
-  }
-  
-  /**
-   * Calculate retry delay with exponential backoff
-   * @param {number} attempt - The retry attempt number (starting from 0)
-   * @returns {number} - The delay in milliseconds
-   * @private
-   */
-  _calculateRetryDelay(attempt) {
-    // For the first retry, use the initial delay
-    if (attempt <= 1) {
-      return this.initialRetryDelay;
-    }
-    
-    // Calculate exponential backoff
-    const delay = this.initialRetryDelay * Math.pow(this.retryBackoffFactor, attempt - 1);
-    
-    // Add some jitter to avoid thundering herd problem (±15%)
-    const jitter = 0.3 * delay * (Math.random() - 0.5);
-    
-    // Apply max delay cap
-    return Math.min(this.maxRetryDelay, delay + jitter);
-  }
-  
-  /**
-   * Create a standardized error object
-   * @param {string} message - The error message
-   * @param {string} category - The error category
-   * @returns {Error} - The error object
-   * @private
-   */
-  _createError(message, category = ErrorCategory.UNKNOWN) {
-    const error = new Error(message);
-    error.category = category;
-    return error;
-  }
-  
-  /**
-   * Determine if an error is retryable
-   * @param {string} category - The error category
-   * @param {number} statusCode - HTTP status code if available
-   * @returns {boolean} - Whether the error is retryable
-   * @private
-   */
-  _isRetryableError(category, statusCode) {
-    // Network errors and timeouts are always retryable
-    if (category === ErrorCategory.NETWORK || category === ErrorCategory.TIMEOUT) {
-      return true;
-    }
-    
-    // Server errors (5xx) are usually retryable
-    if (category === ErrorCategory.SERVER) {
-      return true;
-    }
-    
-    // Some specific client errors might be retryable
-    if (category === ErrorCategory.CLIENT) {
-      // 408 Request Timeout, 429 Too Many Requests are retryable
-      return statusCode === 408 || statusCode === 429;
-    }
-    
-    // Other client errors (4xx) are generally not retryable
-    return false;
-  }
-  
-  /**
-   * Categorize an error based on its properties
-   * @param {Error} error - The error object
-   * @returns {string} - The error category
-   * @private
-   */
-  _categorizeError(error) {
-    // If error already has a category, use it
-    if (error.category) {
-      return error.category;
-    }
-    
-    // Check for network errors
-    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED' || 
-        error.code === 'ECONNRESET' || error.code === 'EHOSTUNREACH') {
-      return ErrorCategory.NETWORK;
-    }
-    
-    // Check for timeout errors
-    if (error.code === 'ETIMEDOUT' || error.code === 'ESOCKETTIMEDOUT' || 
-        error.message.includes('timeout')) {
-      return ErrorCategory.TIMEOUT;
-    }
-    
-    // Check HTTP status codes
-    if (error.response) {
-      const status = error.response.status;
-      
-      // 4xx errors are client errors
-      if (status >= 400 && status < 500) {
-        return ErrorCategory.CLIENT;
-      }
-      
-      // 5xx errors are server errors
-      if (status >= 500) {
-        return ErrorCategory.SERVER;
-      }
-    }
-    
-    // Content errors
-    if (error.message.includes('content') || error.message.includes('parse')) {
-      return ErrorCategory.CONTENT;
-    }
-    
-    // Default to unknown
-    return ErrorCategory.UNKNOWN;
-  }
-  
-  /**
-   * Download multiple segments sequentially
-   * @param {Array<Object>} segmentInfos - Array of objects with url and metadata
-   * @param {boolean} [skipExisting=true] - Skip segments that have already been downloaded
-   * @returns {Promise<Array<Object>>} - Results of each download
-   */
-  async downloadSegmentsSequential(segmentInfos, skipExisting = true) {
-    const results = [];
-    
-    for (const info of segmentInfos) {
-      // Skip if already downloaded and skipExisting is true
-      if (skipExisting && this.hasDownloadedSegment(info.url)) {
-        const cachedSegment = this._getSegmentFromBuffer(info.url);
-        if (cachedSegment) {
-          results.push({
-            success: true,
-            url: info.url,
-            size: cachedSegment.size,
-            durationMs: 0,
-            httpStatus: 200,
-            segment: cachedSegment,
-            fromCache: true
-          });
-          continue;
-        }
-      }
-      
-      const result = await this.downloadSegment(info.url, info.metadata);
-      results.push(result);
-    }
-    
-    return results;
-  }
-  
-  /**
-   * Download multiple segments in parallel with a concurrency limit
-   * @param {Array<Object>} segmentInfos - Array of objects with url and metadata
-   * @param {number} [concurrency=3] - Maximum number of concurrent downloads
-   * @param {boolean} [skipExisting=true] - Skip segments that have already been downloaded
-   * @returns {Promise<Array<Object>>} - Results of each download
-   */
-  async downloadSegmentsParallel(segmentInfos, concurrency = 3, skipExisting = true) {
-    const results = [];
-    const totalSegments = segmentInfos.length;
-    let processedSegments = 0;
-    
-    logger.info(`Starting parallel download of ${totalSegments} segments with concurrency ${concurrency}`);
-    
-    // Filter out already downloaded segments if skipExisting is true
-    const segmentsToDownload = skipExisting ? 
-      segmentInfos.filter(info => !this.hasDownloadedSegment(info.url)) : 
-      [...segmentInfos];
-    
-    const skippedCount = totalSegments - segmentsToDownload.length;
-    if (skippedCount > 0) {
-      logger.info(`Skipping ${skippedCount} already downloaded segments`);
-      
-      // Add skipped segments from buffer to results
-      for (const info of segmentInfos) {
-        if (this.hasDownloadedSegment(info.url)) {
-          const cachedSegment = this._getSegmentFromBuffer(info.url);
-          if (cachedSegment) {
-            results.push({
-              success: true,
-              url: info.url,
-              size: cachedSegment.size,
-              durationMs: 0,
-              httpStatus: 200,
-              segment: cachedSegment,
-              fromCache: true
-            });
-            processedSegments++;
-          }
-        }
-      }
-    }
-    
-    // Process remaining segments in batches
-    for (let i = 0; i < segmentsToDownload.length; i += concurrency) {
-      const batch = segmentsToDownload.slice(i, i + concurrency);
-      const batchPromises = batch.map(info => this.downloadSegment(info.url, info.metadata));
-      
-      const batchResults = await Promise.all(batchPromises);
-      results.push(...batchResults);
-      
-      processedSegments += batch.length;
-      logger.info(`Downloaded batch ${Math.floor(i/concurrency) + 1} - ${processedSegments}/${totalSegments} segments`);
-    }
-    
-    // Update parallel download metrics
-    this._updateParallelDownloadMetrics(results);
-    
-    return results;
-  }
-  
-  /**
-   * Get download history
-   * @param {number} [limit=100] - Maximum number of history items to return
-   * @returns {Array<Object>} - Download history items
-   */
-  getDownloadHistory(limit = 100) {
-    return this.downloadHistory.slice(-limit);
-  }
-  
-  /**
-   * Get download statistics
-   * @returns {Object} - Download statistics
-   */
-  getStats() {
-    return {
-      ...this.stats,
-      successRate: this.stats.totalDownloads > 0 ? 
-        this.stats.successfulDownloads / this.stats.totalDownloads : 0,
-      downloadedUrls: Array.from(this.downloadedSegments.keys())
-    };
-  }
-  
-  /**
-   * Update parallel download metrics
-   * @param {Array<Object>} results - Download results
-   * @private
-   */
-  _updateParallelDownloadMetrics(results) {
-    // Calculate parallel download efficiency
-    const successfulResults = results.filter(r => r.success && !r.fromCache);
-    if (successfulResults.length === 0) return;
-    
-    const totalBytes = successfulResults.reduce((sum, r) => sum + r.size, 0);
-    const totalTime = Math.max(...successfulResults.map(r => r.durationMs));
-    const totalIndividualTime = successfulResults.reduce((sum, r) => sum + r.durationMs, 0);
-    
-    if (totalTime > 0) {
-      const parallelEfficiency = totalIndividualTime / totalTime;
-      this.stats.lastParallelEfficiency = parallelEfficiency;
-      this.stats.averageParallelEfficiency = 
-        (this.stats.averageParallelEfficiency * this.stats.parallelDownloadCount + parallelEfficiency) / 
-        (this.stats.parallelDownloadCount + 1);
-      this.stats.parallelDownloadCount++;
-    }
-  }
-  
-  /**
-   * Create empty stats object
-   * @returns {Object} - Empty stats object
-   * @private
-   */
-  _createEmptyStats() {
-    return {
+    // Statistics
+    this.stats = {
       totalDownloads: 0,
       successfulDownloads: 0,
       failedDownloads: 0,
       skippedDownloads: 0,
       totalBytes: 0,
-      totalDuration: 0,
-      averageDownloadTime: 0,
-      averageBandwidthKbps: 0,
-      errorsByCategory: {},
-      parallelDownloadCount: 0,
-      averageParallelEfficiency: 0,
-      lastParallelEfficiency: 0
+      downloadTimes: [], // Array of download times in ms
+      bandwidthMeasurements: [], // Array of bandwidth measurements in kbps
+      errorsByCategory: {
+        network: 0,
+        server: 0,
+        client: 0,
+        timeout: 0,
+        content: 0,
+        unknown: 0
+      }
+    };
+    
+    logger.info('Initialized downloader service');
+  }
+  
+  /**
+   * Initialize the downloader service
+   * @param {Object} [options] - Configuration options
+   */
+  initialize(options = {}) {
+    this.maxRetries = options.maxRetries || this.maxRetries;
+    this.retryDelayBase = options.retryDelayBase || this.retryDelayBase;
+    this.maxRetryDelay = options.maxRetryDelay || this.maxRetryDelay;
+    this.maxConcurrentDownloads = options.maxConcurrentDownloads || this.maxConcurrentDownloads;
+    
+    // Set buffer service reference
+    this.bufferService = options.bufferService || bufferService;
+    
+    this.isInitialized = true;
+    
+    logger.info(`Downloader service initialized with maxRetries: ${this.maxRetries}, maxConcurrentDownloads: ${this.maxConcurrentDownloads}`);
+    
+    // Reset statistics
+    this.resetStats();
+    return this;
+  }
+  
+  /**
+   * Reset download statistics
+   */
+  resetStats() {
+    this.stats = {
+      totalDownloads: 0,
+      successfulDownloads: 0,
+      failedDownloads: 0,
+      skippedDownloads: 0,
+      totalBytes: 0,
+      downloadTimes: [],
+      bandwidthMeasurements: [],
+      errorsByCategory: {
+        network: 0,
+        server: 0,
+        client: 0,
+        timeout: 0,
+        content: 0,
+        unknown: 0
+      }
+    };
+    
+    logger.info('Download statistics reset');
+  }
+  
+  /**
+   * Clear download history
+   */
+  clearDownloadHistory() {
+    this.downloadHistory.clear();
+    logger.info('Download history cleared');
+  }
+  
+  /**
+   * Check if a segment has already been downloaded
+   * @param {string} url - Segment URL
+   * @returns {boolean} - True if the segment has been downloaded
+   */
+  hasDownloadedSegment(url) {
+    return this.downloadHistory.has(url);
+  }
+  
+  /**
+   * Download a segment
+   * @param {string} url - Segment URL
+   * @param {Object} [metadata] - Additional metadata about the segment
+   * @param {Object} [options] - Download options
+   * @returns {Promise<Object>} - Download result
+   */
+  async downloadSegment(url, metadata = {}, options = {}) {
+    if (!this.isInitialized) {
+      throw new Error('Downloader service not initialized');
+    }
+    
+    const reqId = `req_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    
+    // Check if already downloaded
+    if (!options.force && this.hasDownloadedSegment(url)) {
+      const cachedResult = this.downloadHistory.get(url);
+      logger.info(`[${reqId}] Segment already downloaded: ${url}`);
+      
+      this.stats.skippedDownloads++;
+      
+      // Emit reused event
+      this.emit('segmentReused', {
+        url,
+        size: cachedResult.size,
+        metadata
+      });
+      
+      return {
+        success: true,
+        fromCache: true,
+        size: cachedResult.size,
+        metadata
+      };
+    }
+    
+    // Handle queue if we're at max concurrent downloads
+    if (this.activeDownloads >= this.maxConcurrentDownloads) {
+      logger.debug(`[${reqId}] Maximum concurrent downloads reached (${this.activeDownloads}/${this.maxConcurrentDownloads}), queueing: ${url}`);
+      
+      // Return a promise that resolves when the download is processed from the queue
+      return new Promise((resolve) => {
+        this.downloadQueue.push({
+          url,
+          metadata,
+          options,
+          resolve
+        });
+        
+        this.emit('downloadQueued', {
+          url,
+          queueLength: this.downloadQueue.length
+        });
+      });
+    }
+    
+    // Start the download
+    try {
+      this.activeDownloads++;
+      this.stats.totalDownloads++;
+      
+      const downloadPromise = this._downloadWithRetry(url, metadata, options, reqId);
+      this.pendingDownloads.add(downloadPromise);
+      
+      // Process the next item in the queue when this download finishes
+      downloadPromise.finally(() => {
+        this.activeDownloads--;
+        this.pendingDownloads.delete(downloadPromise);
+        this._processNextQueuedDownload();
+      });
+      
+      return await downloadPromise;
+    } catch (error) {
+      this.activeDownloads--;
+      
+      // Process the next item in the queue even if this one failed
+      this._processNextQueuedDownload();
+      
+      throw error;
+    }
+  }
+  
+  /**
+   * Process the next download in the queue
+   * @private
+   */
+  _processNextQueuedDownload() {
+    if (this.downloadQueue.length > 0 && this.activeDownloads < this.maxConcurrentDownloads) {
+      const nextDownload = this.downloadQueue.shift();
+      
+      // Start the download and resolve the original promise with the result
+      this.downloadSegment(nextDownload.url, nextDownload.metadata, nextDownload.options)
+        .then(result => nextDownload.resolve(result))
+        .catch(error => nextDownload.resolve({
+          success: false,
+          error: error.message,
+          metadata: nextDownload.metadata
+        }));
+    }
+  }
+  
+  /**
+   * Download a segment with retry logic
+   * @param {string} url - Segment URL
+   * @param {Object} metadata - Additional metadata
+   * @param {Object} options - Download options
+   * @param {string} reqId - Request ID for logging
+   * @returns {Promise<Object>} - Download result
+   * @private
+   */
+  async _downloadWithRetry(url, metadata, options, reqId) {
+    let retryCount = 0;
+    let lastError = null;
+    let partialData = null;
+    let partialSize = 0;
+    
+    logger.info(`[${reqId}] Starting download: ${url}`);
+    
+    while (retryCount <= this.maxRetries) {
+      try {
+        const startTime = Date.now();
+        
+        // Set up request headers and options
+        const requestConfig = {
+          responseType: 'arraybuffer',
+          timeout: options.timeout || 30000,
+          headers: {}
+        };
+        
+        // If we have partial data, use Range header to resume download
+        if (partialData) {
+          requestConfig.headers.Range = `bytes=${partialSize}-`;
+          logger.info(`[${reqId}] Resuming download from byte ${partialSize}`);
+        }
+        
+        // Make the request
+        const response = await axios.get(url, requestConfig);
+        
+        // Calculate download stats
+        const endTime = Date.now();
+        const durationMs = endTime - startTime;
+        
+        let data;
+        
+        // Handle partial content response (206)
+        if (response.status === 206 && partialData) {
+          // Combine the partial data with the new data
+          const newData = Buffer.from(response.data);
+          data = Buffer.concat([partialData, newData]);
+          logger.info(`[${reqId}] Combined ${partialSize} bytes of partial data with ${newData.length} new bytes`);
+        } else {
+          // Use the response data directly
+          data = Buffer.from(response.data);
+        }
+        
+        const size = data.length;
+        const bandwidthKbps = Math.round((size * 8) / durationMs); // bits per ms = kbps
+        
+        // Update statistics
+        this.stats.successfulDownloads++;
+        this.stats.totalBytes += size;
+        this.stats.downloadTimes.push(durationMs);
+        this.stats.bandwidthMeasurements.push(bandwidthKbps);
+        
+        // Store in download history
+        this.downloadHistory.set(url, {
+          timestamp: Date.now(),
+          size,
+          durationMs,
+          bandwidthKbps
+        });
+        
+        logger.info(`[${reqId}] Successfully downloaded segment: ${url} (${size} bytes in ${durationMs}ms, ${bandwidthKbps} kbps)`);
+        
+        // Store in buffer with metadata
+        const segmentId = metadata.sequenceNumber?.toString() || `segment_${Date.now()}`;
+        const bufferResult = await this.bufferService.addSegment(segmentId, data, {
+          url,
+          size,
+          downloadTime: durationMs,
+          bandwidth: bandwidthKbps,
+          timestamp: Date.now(),
+          ...metadata
+        });
+        
+        // Create result object
+        const result = {
+          success: true,
+          size,
+          durationMs,
+          bandwidthKbps,
+          retryCount,
+          url,
+          metadata,
+          bufferId: segmentId
+        };
+        
+        // Emit success event
+        this.emit('downloadSuccess', result);
+        
+        return result;
+      } catch (error) {
+        retryCount++;
+        lastError = error;
+        
+        // Categorize the error
+        const errorCategory = this._categorizeError(error);
+        this.stats.errorsByCategory[errorCategory]++;
+        
+        // Save partial content for resuming, if available
+        if (error.response && error.response.data) {
+          partialData = Buffer.from(error.response.data);
+          partialSize = partialData.length;
+          logger.info(`[${reqId}] Saved ${partialSize} bytes of partial content for resume`);
+        }
+        
+        const errorInfo = {
+          message: error.message,
+          code: error.code,
+          status: error.response?.status,
+          category: errorCategory,
+          retryCount,
+          url
+        };
+        
+        // Check if we should retry
+        if (retryCount <= this.maxRetries && this._isRetryableError(error)) {
+          // Calculate retry delay with exponential backoff and jitter
+          const delay = this._calculateRetryDelay(retryCount);
+          
+          logger.warn(`[${reqId}] Download attempt ${retryCount}/${this.maxRetries} failed: ${error.message}. Retrying in ${delay}ms...`);
+          
+          // Emit retry event
+          this.emit('downloadRetry', {
+            ...errorInfo,
+            delay,
+            nextAttempt: retryCount
+          });
+          
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          // Max retries reached or non-retryable error
+          this.stats.failedDownloads++;
+          
+          logger.error(`[${reqId}] Download failed after ${retryCount} attempts: ${error.message}`);
+          
+          // Emit failure event
+          this.emit('downloadFailure', {
+            ...errorInfo,
+            metadata
+          });
+          
+          return {
+            success: false,
+            errorCategory,
+            errorMessage: error.message,
+            status: error.response?.status,
+            retryCount,
+            url,
+            partialSize, // Include size of any partial data received
+            metadata
+          };
+        }
+      }
+    }
+    
+    // This shouldn't be reached due to the return in the catch block
+    // but is here for completeness
+    return {
+      success: false,
+      errorMessage: lastError?.message || 'Unknown error',
+      retryCount,
+      url,
+      metadata
     };
   }
   
   /**
-   * Clear the download statistics
+   * Calculate retry delay with exponential backoff and jitter
+   * @param {number} retryCount - The current retry attempt
+   * @returns {number} - Delay in ms
+   * @private
    */
-  clearStats() {
-    this.stats = this._createEmptyStats();
+  _calculateRetryDelay(retryCount) {
+    // Exponential backoff: base * 2^retryCount
+    const exponentialDelay = this.retryDelayBase * Math.pow(2, retryCount - 1);
+    
+    // Add jitter: random value between 0 and 30% of the delay
+    const jitter = Math.random() * 0.3 * exponentialDelay;
+    
+    // Calculate final delay with a maximum cap
+    return Math.min(exponentialDelay + jitter, this.maxRetryDelay);
   }
   
   /**
-   * Clear download history and tracking data
+   * Determine if an error is retryable
+   * @param {Error} error - The error to check
+   * @returns {boolean} - True if the error is retryable
+   * @private
    */
-  clearHistory() {
-    this.downloadHistory = [];
-    this.downloadedSegments.clear();
-    logger.info('Download history cleared');
+  _isRetryableError(error) {
+    // Network errors are generally retryable
+    if (!error.response) {
+      return true;
+    }
+    
+    // 5xx errors are server errors and are retryable
+    if (error.response.status >= 500 && error.response.status < 600) {
+      return true;
+    }
+    
+    // 429 Too Many Requests should be retried
+    if (error.response.status === 429) {
+      return true;
+    }
+    
+    // 408 Request Timeout is retryable
+    if (error.response.status === 408) {
+      return true;
+    }
+    
+    // All other status codes are generally not retryable
+    // 4xx client errors indicate a problem with the request,
+    // so retrying the same request likely won't help
+    return false;
+  }
+  
+  /**
+   * Categorize an error to help with analysis
+   * @param {Error} error - The error to categorize
+   * @returns {string} - Error category
+   * @private
+   */
+  _categorizeError(error) {
+    if (!error.response) {
+      // Network error, connection problem
+      return 'network';
+    }
+    
+    const status = error.response.status;
+    
+    if (status >= 500 && status < 600) {
+      return 'server';
+    }
+    
+    if (status >= 400 && status < 500) {
+      return 'client';
+    }
+    
+    if (error.code === 'ECONNABORTED') {
+      return 'timeout';
+    }
+    
+    if (error.message && error.message.includes('content')) {
+      return 'content';
+    }
+    
+    return 'unknown';
+  }
+  
+  /**
+   * Download multiple segments in parallel
+   * @param {Array<string>} urls - Array of segment URLs
+   * @param {Object} [options] - Download options
+   * @returns {Promise<Array<Object>>} - Array of download results
+   */
+  async downloadSegments(urls, options = {}) {
+    if (!this.isInitialized) {
+      throw new Error('Downloader service not initialized');
+    }
+    
+    logger.info(`Starting parallel download of ${urls.length} segments with concurrency ${this.maxConcurrentDownloads}`);
+    
+    // Filter out already downloaded segments unless force is true
+    const urlsToDownload = options.force 
+      ? urls 
+      : urls.filter(url => !this.hasDownloadedSegment(url));
+    
+    if (urls.length !== urlsToDownload.length) {
+      logger.info(`Skipping ${urls.length - urlsToDownload.length} already downloaded segments`);
+    }
+    
+    // If no segments to download, return early
+    if (urlsToDownload.length === 0) {
+      return [];
+    }
+    
+    // Process all downloads
+    const downloadPromises = urlsToDownload.map((url, index) => 
+      this.downloadSegment(url, { index }, options)
+    );
+    
+    // Wait for all downloads to complete
+    const results = await Promise.all(downloadPromises);
+    
+    // Count successes and failures
+    const successCount = results.filter(r => r.success).length;
+    
+    logger.info(`Completed batch download: ${successCount}/${results.length} segments successful`);
+    
+    // Emit batch complete event
+    this.emit('downloadComplete', {
+      totalCount: results.length,
+      successCount,
+      failureCount: results.length - successCount
+    });
+    
+    return results;
+  }
+  
+  /**
+   * Wait for all pending downloads to complete
+   * @param {number} [timeout] - Maximum time to wait in ms
+   * @returns {Promise<void>}
+   */
+  async finishPendingDownloads(timeout) {
+    if (this.pendingDownloads.size === 0) {
+      return;
+    }
+    
+    logger.info(`Waiting for ${this.pendingDownloads.size} pending downloads to complete...`);
+    
+    const pendingPromises = Array.from(this.pendingDownloads);
+    
+    if (timeout) {
+      // Create a timeout promise
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`Timed out waiting for downloads after ${timeout}ms`)), timeout);
+      });
+      
+      // Race the pending downloads against the timeout
+      try {
+        await Promise.race([
+          Promise.all(pendingPromises),
+          timeoutPromise
+        ]);
+      } catch (error) {
+        logger.warn(`Timeout reached while waiting for downloads: ${error.message}`);
+        return;
+      }
+    } else {
+      // Wait for all pending downloads with no timeout
+      await Promise.all(pendingPromises);
+    }
+    
+    logger.info('All pending downloads completed');
+  }
+  
+  /**
+   * Get download statistics
+   * @returns {Object} - Statistics object
+   */
+  getStats() {
+    // Calculate derived statistics
+    const avgDownloadTime = this.stats.downloadTimes.length > 0
+      ? Math.round(this.stats.downloadTimes.reduce((a, b) => a + b, 0) / this.stats.downloadTimes.length)
+      : 0;
+      
+    const avgBandwidthKbps = this.stats.bandwidthMeasurements.length > 0
+      ? Math.round(this.stats.bandwidthMeasurements.reduce((a, b) => a + b, 0) / this.stats.bandwidthMeasurements.length)
+      : 0;
+      
+    const successRate = this.stats.totalDownloads > 0
+      ? Math.round((this.stats.successfulDownloads / this.stats.totalDownloads) * 100) + '%'
+      : '0%';
+    
+    return {
+      totalDownloads: this.stats.totalDownloads,
+      successfulDownloads: this.stats.successfulDownloads,
+      failedDownloads: this.stats.failedDownloads,
+      skippedDownloads: this.stats.skippedDownloads,
+      totalBytes: this.stats.totalBytes,
+      averageDownloadTime: avgDownloadTime,
+      averageBandwidthKbps: avgBandwidthKbps,
+      successRate,
+      errorsByCategory: this.stats.errorsByCategory,
+      activeDownloads: this.activeDownloads,
+      queuedDownloads: this.downloadQueue.length,
+      pendingDownloads: this.pendingDownloads.size
+    };
   }
 }
 
-// Export singleton instance
+// Create singleton instance
 const downloaderService = new DownloaderService();
 
 module.exports = {
   downloaderService,
-  DownloaderService,
-  ErrorCategory
+  DownloaderService
 }; 
