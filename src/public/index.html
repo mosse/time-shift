@@ -3,389 +3,92 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Time-shifted radio player that allows you to listen to radio broadcasts from 8 hours ago">
     <title>Time-Shifted Radio Player</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            padding: 20px;
-            max-width: 800px;
-            margin: 0 auto;
-            background-color: #f5f5f5;
-            color: #333;
-        }
-        h1 {
-            color: #2c3e50;
-            border-bottom: 1px solid #ddd;
-            padding-bottom: 10px;
-            margin-bottom: 30px;
-        }
-        .player-container {
-            background-color: #fff;
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-        video, audio {
-            width: 100%;
-            border-radius: 4px;
-            margin-bottom: 20px;
-        }
-        .controls {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-        button {
-            background-color: #3498db;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        button:hover {
-            background-color: #2980b9;
-        }
-        .status {
-            background-color: #eee;
-            padding: 15px;
-            border-radius: 4px;
-            font-family: monospace;
-            white-space: pre-wrap;
-            margin-top: 20px;
-        }
-        .status h3 {
-            margin-top: 0;
-        }
-        .tabs {
-            display: flex;
-            border-bottom: 1px solid #ddd;
-            margin-bottom: 20px;
-        }
-        .tab {
-            padding: 10px 20px;
-            cursor: pointer;
-            background-color: #f8f8f8;
-            border: 1px solid #ddd;
-            border-bottom: none;
-            margin-right: 5px;
-            border-radius: 4px 4px 0 0;
-        }
-        .tab.active {
-            background-color: #fff;
-            border-bottom: 1px solid #fff;
-            margin-bottom: -1px;
-            font-weight: bold;
-        }
-        .tab-content {
-            display: none;
-        }
-        .tab-content.active {
-            display: block;
-        }
-        .form-group {
-            margin-bottom: 15px;
-        }
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-        }
-        input, select {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            box-sizing: border-box;
-        }
-    </style>
+    <link rel="stylesheet" href="css/styles.css">
     <!-- Include the HLS.js library for HLS playback in browsers -->
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="js/player.js"></script>
 </head>
 <body>
-    <h1>Time-Shifted Radio Stream Player</h1>
-    
-    <div class="player-container">
-        <div class="tabs">
-            <div class="tab active" data-tab="hls">HLS Playlist</div>
-            <div class="tab" data-tab="segments">Direct Segments</div>
-            <div class="tab" data-tab="status">Stream Status</div>
-        </div>
+    <div class="container">
+        <header>
+            <h1>Time-Shifted Radio Stream Player</h1>
+            <p class="tagline">Listen to radio broadcasts with an 8-hour delay</p>
+        </header>
         
-        <div class="tab-content active" id="hls-tab">
-            <video id="video" controls></video>
-            
-            <div class="controls">
-                <button id="playButton">Play Stream</button>
-                <button id="refreshButton">Refresh Stream</button>
+        <main>
+            <div class="player-container">
+                <div class="tabs" role="tablist">
+                    <div class="tab active" role="tab" aria-selected="true" aria-controls="hls-tab" tabindex="0" data-tab="hls">HLS Playlist</div>
+                    <div class="tab" role="tab" aria-selected="false" aria-controls="segments-tab" tabindex="-1" data-tab="segments">Direct Segments</div>
+                    <div class="tab" role="tab" aria-selected="false" aria-controls="status-tab" tabindex="-1" data-tab="status">Stream Status</div>
+                </div>
+                
+                <div class="tab-content active" id="hls-tab" role="tabpanel" aria-labelledby="hls-tab">
+                    <video id="video" controls aria-label="HLS video player"></video>
+                    
+                    <div class="controls">
+                        <button id="playButton" aria-label="Play Stream">Play Stream</button>
+                        <button id="refreshButton" aria-label="Refresh Stream">Refresh Stream</button>
+                    </div>
+                    
+                    <p>This player is streaming content with an 8-hour delay from the original broadcast using HLS.</p>
+                </div>
+                
+                <div class="tab-content" id="segments-tab" role="tabpanel" aria-labelledby="segments-tab" hidden>
+                    <audio id="audioPlayer" controls aria-label="Audio segment player"></audio>
+                    
+                    <div class="form-group">
+                        <label for="segmentType">Segment Type:</label>
+                        <select id="segmentType" aria-label="Select segment type">
+                            <option value="current">Current Time (8 hours delayed)</option>
+                            <option value="timestamp">Specific Timestamp</option>
+                            <option value="sequence">Sequence Number</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group" id="timestampGroup" hidden>
+                        <label for="timestamp">Timestamp (ISO format):</label>
+                        <input type="datetime-local" id="timestamp" step="1" aria-describedby="timestampHint">
+                        <div id="timestampHint" class="hint">Enter the timestamp for the desired audio segment</div>
+                    </div>
+                    
+                    <div class="form-group" id="sequenceGroup" hidden>
+                        <label for="sequence">Sequence Number:</label>
+                        <input type="number" id="sequence" min="0" step="1" aria-describedby="sequenceHint">
+                        <div id="sequenceHint" class="hint">Enter the sequence number of the desired audio segment</div>
+                    </div>
+                    
+                    <div class="controls">
+                        <button id="loadSegmentButton" aria-label="Load Segment">Load Segment</button>
+                        <button id="nextSegmentButton" aria-label="Next Segment">Next Segment</button>
+                    </div>
+                    
+                    <p>Direct segment access allows you to request specific audio segments from the buffer.</p>
+                </div>
+                
+                <div class="tab-content" id="status-tab" role="tabpanel" aria-labelledby="status-tab" hidden>
+                    <div class="controls">
+                        <button id="checkStatusButton" aria-label="Check Stream Status">Check Stream Status</button>
+                    </div>
+                    
+                    <div class="status" id="streamStatus">
+                        <h3>Stream Status</h3>
+                        <div id="statusContent">Click "Check Stream Status" to view the current stream information.</div>
+                    </div>
+                </div>
+                
+                <div class="status" id="status">
+                    <h3>Player Status</h3>
+                    <div id="playerStatusContent" aria-live="polite">Player ready.</div>
+                </div>
             </div>
-            
-            <p>This player is streaming content with an 8-hour delay from the original broadcast using HLS.</p>
-        </div>
+        </main>
         
-        <div class="tab-content" id="segments-tab">
-            <audio id="audioPlayer" controls></audio>
-            
-            <div class="form-group">
-                <label for="segmentType">Segment Type:</label>
-                <select id="segmentType">
-                    <option value="current">Current Time (8 hours delayed)</option>
-                    <option value="timestamp">Specific Timestamp</option>
-                    <option value="sequence">Sequence Number</option>
-                </select>
-            </div>
-            
-            <div class="form-group" id="timestampGroup" style="display: none;">
-                <label for="timestamp">Timestamp (ISO format):</label>
-                <input type="datetime-local" id="timestamp" step="1">
-            </div>
-            
-            <div class="form-group" id="sequenceGroup" style="display: none;">
-                <label for="sequence">Sequence Number:</label>
-                <input type="number" id="sequence" min="0" step="1">
-            </div>
-            
-            <div class="controls">
-                <button id="loadSegmentButton">Load Segment</button>
-                <button id="nextSegmentButton">Next Segment</button>
-            </div>
-            
-            <p>Direct segment access allows you to request specific audio segments from the buffer.</p>
-        </div>
-        
-        <div class="tab-content" id="status-tab">
-            <div class="controls">
-                <button id="checkStatusButton">Check Stream Status</button>
-            </div>
-            
-            <div class="status" id="streamStatus">
-                <h3>Stream Status</h3>
-                <div id="statusContent">Click "Check Stream Status" to view the current stream information.</div>
-            </div>
-        </div>
-        
-        <div class="status" id="status">
-            <h3>Player Status</h3>
-            <div id="playerStatusContent">Player ready.</div>
-        </div>
+        <footer>
+            <p>Time-Shifted Radio Stream &copy; <span id="currentYear"></span> | <a href="https://github.com/your-username/time-shift" target="_blank" rel="noopener">GitHub</a></p>
+        </footer>
     </div>
-    
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Elements
-            const video = document.getElementById('video');
-            const audioPlayer = document.getElementById('audioPlayer');
-            const playButton = document.getElementById('playButton');
-            const refreshButton = document.getElementById('refreshButton');
-            const playerStatusContent = document.getElementById('playerStatusContent');
-            const statusContent = document.getElementById('statusContent');
-            const tabs = document.querySelectorAll('.tab');
-            const tabContents = document.querySelectorAll('.tab-content');
-            const segmentType = document.getElementById('segmentType');
-            const timestampGroup = document.getElementById('timestampGroup');
-            const sequenceGroup = document.getElementById('sequenceGroup');
-            const timestamp = document.getElementById('timestamp');
-            const sequence = document.getElementById('sequence');
-            const loadSegmentButton = document.getElementById('loadSegmentButton');
-            const nextSegmentButton = document.getElementById('nextSegmentButton');
-            const checkStatusButton = document.getElementById('checkStatusButton');
-            
-            // Stream URLs
-            const streamUrl = '/stream.m3u8';
-            let hls = null;
-            let currentSequence = 0;
-            
-            // Tab handling
-            tabs.forEach(tab => {
-                tab.addEventListener('click', function() {
-                    tabs.forEach(t => t.classList.remove('active'));
-                    tabContents.forEach(tc => tc.classList.remove('active'));
-                    
-                    this.classList.add('active');
-                    const tabId = this.getAttribute('data-tab') + '-tab';
-                    document.getElementById(tabId).classList.add('active');
-                });
-            });
-            
-            // Segment type handling
-            segmentType.addEventListener('change', function() {
-                timestampGroup.style.display = 'none';
-                sequenceGroup.style.display = 'none';
-                
-                if (this.value === 'timestamp') {
-                    timestampGroup.style.display = 'block';
-                    // Set default to current time minus 8 hours
-                    const date = new Date();
-                    date.setHours(date.getHours() - 8);
-                    timestamp.value = date.toISOString().slice(0, 19);
-                } else if (this.value === 'sequence') {
-                    sequenceGroup.style.display = 'block';
-                    if (!sequence.value) {
-                        sequence.value = '0';
-                    }
-                }
-            });
-            
-            // Initialize and play the HLS stream
-            function initPlayer() {
-                playerStatusContent.textContent = 'Initializing player...';
-                
-                // If an HLS instance exists, destroy it first
-                if (hls) {
-                    hls.destroy();
-                }
-                
-                // Check if HLS.js is supported
-                if (Hls.isSupported()) {
-                    hls = new Hls({
-                        debug: false,
-                        manifestLoadingMaxRetry: 3,
-                        manifestLoadingRetryDelay: 1000,
-                        manifestLoadingMaxRetryTimeout: 10000
-                    });
-                    
-                    // Bind HLS to the video element
-                    hls.loadSource(streamUrl);
-                    hls.attachMedia(video);
-                    
-                    // Handle HLS events
-                    hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                        playerStatusContent.textContent = 'Stream loaded successfully. Playback starting...';
-                        video.play().catch(error => {
-                            playerStatusContent.textContent = 'Playback error: ' + error.message;
-                        });
-                    });
-                    
-                    hls.on(Hls.Events.ERROR, function(event, data) {
-                        playerStatusContent.textContent = 'Player error: ' + data.type + ' - ' + data.details;
-                        console.error('HLS.js error:', data);
-                        
-                        if (data.fatal) {
-                            switch (data.type) {
-                                case Hls.ErrorTypes.NETWORK_ERROR:
-                                    playerStatusContent.textContent = 'Network error. Attempting to recover...';
-                                    hls.startLoad();
-                                    break;
-                                case Hls.ErrorTypes.MEDIA_ERROR:
-                                    playerStatusContent.textContent = 'Media error. Attempting to recover...';
-                                    hls.recoverMediaError();
-                                    break;
-                                default:
-                                    playerStatusContent.textContent = 'Fatal error. Please refresh the player.';
-                                    break;
-                            }
-                        }
-                    });
-                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                    // For Safari on iOS/macOS
-                    playerStatusContent.textContent = 'Using native HLS playback';
-                    video.src = streamUrl;
-                    video.addEventListener('loadedmetadata', function() {
-                        video.play().catch(error => {
-                            playerStatusContent.textContent = 'Playback error: ' + error.message;
-                        });
-                    });
-                } else {
-                    playerStatusContent.textContent = 'HLS playback is not supported in your browser.';
-                }
-            }
-            
-            // Load a specific segment
-            function loadSegment() {
-                playerStatusContent.textContent = 'Loading segment...';
-                
-                let segmentUrl;
-                
-                switch (segmentType.value) {
-                    case 'current':
-                        segmentUrl = '/segments/current';
-                        break;
-                        
-                    case 'timestamp':
-                        if (!timestamp.value) {
-                            playerStatusContent.textContent = 'Please enter a valid timestamp';
-                            return;
-                        }
-                        const ts = new Date(timestamp.value).getTime();
-                        segmentUrl = `/segments/${ts}`;
-                        break;
-                        
-                    case 'sequence':
-                        if (!sequence.value) {
-                            playerStatusContent.textContent = 'Please enter a valid sequence number';
-                            return;
-                        }
-                        currentSequence = parseInt(sequence.value, 10);
-                        segmentUrl = `/segments/${currentSequence}`;
-                        break;
-                }
-                
-                audioPlayer.src = segmentUrl;
-                audioPlayer.load();
-                
-                audioPlayer.addEventListener('canplaythrough', function onCanPlay() {
-                    playerStatusContent.textContent = 'Segment loaded successfully';
-                    audioPlayer.play();
-                    audioPlayer.removeEventListener('canplaythrough', onCanPlay);
-                }, { once: true });
-                
-                audioPlayer.addEventListener('error', function() {
-                    playerStatusContent.textContent = 'Error loading segment: ' + (audioPlayer.error ? audioPlayer.error.message : 'Unknown error');
-                }, { once: true });
-            }
-            
-            // Load the next segment in sequence
-            function loadNextSegment() {
-                currentSequence++;
-                sequence.value = currentSequence;
-                segmentType.value = 'sequence';
-                segmentType.dispatchEvent(new Event('change'));
-                loadSegment();
-            }
-            
-            // Check API status
-            async function checkStreamStatus() {
-                try {
-                    statusContent.textContent = 'Checking stream status...';
-                    const response = await fetch('/stream/status');
-                    
-                    if (!response.ok) {
-                        throw new Error(`HTTP error ${response.status}`);
-                    }
-                    
-                    const data = await response.json();
-                    statusContent.textContent = JSON.stringify(data, null, 2);
-                } catch (error) {
-                    statusContent.textContent = 'Error checking stream status: ' + error.message;
-                }
-            }
-            
-            // Set the timestamp input to current time minus 8 hours
-            const defaultDate = new Date();
-            defaultDate.setHours(defaultDate.getHours() - 8);
-            timestamp.value = defaultDate.toISOString().slice(0, 19);
-            
-            // Event listeners
-            playButton.addEventListener('click', initPlayer);
-            
-            refreshButton.addEventListener('click', function() {
-                playerStatusContent.textContent = 'Refreshing stream...';
-                initPlayer();
-            });
-            
-            loadSegmentButton.addEventListener('click', loadSegment);
-            nextSegmentButton.addEventListener('click', loadNextSegment);
-            checkStatusButton.addEventListener('click', checkStreamStatus);
-            
-            // Handle audio player ended event to auto-load next segment
-            audioPlayer.addEventListener('ended', function() {
-                if (segmentType.value === 'sequence') {
-                    loadNextSegment();
-                }
-            });
-        });
-    </script>
 </body>
 </html> 
