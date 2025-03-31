@@ -29,5 +29,16 @@ module.exports = {
   MAX_PLAYLIST_DURATION: 3600,    // 1 hour in seconds
   
   // System test settings
-  TEST_DURATION: process.env.TEST_DURATION || 60000 // 1 minute
+  TEST_DURATION: process.env.TEST_DURATION || 60000, // 1 minute
+  
+  // Disk storage settings
+  STORAGE: {
+    BASE_DIR: process.env.STORAGE_DIR || './data',
+    SEGMENTS_DIR: 'segments',
+    METADATA_FILE: 'buffer-metadata.json',
+    MAX_WRITE_RETRIES: 3,
+    WRITE_RETRY_DELAY: 500, // milliseconds
+    CLEANUP_INTERVAL: 60000, // 1 minute
+    USE_DISK_STORAGE: true
+  }
 }; 

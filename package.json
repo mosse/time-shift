@@ -11,7 +11,7 @@
     "dev": "nodemon src/index.js",
     "start:prod": "NODE_ENV=production node src/index.js",
     "start:debug": "LOG_LEVEL=debug node src/index.js",
-    "test": "npm run test:playlist && npm run test:buffer && npm run test:buffer-extended && npm run test:downloader && npm run test:downloader-enhanced && npm run test:monitor && npm run test:pipeline && npm run test:system",
+    "test": "npm run test:playlist && npm run test:buffer && npm run test:buffer-extended && npm run test:downloader && npm run test:downloader-enhanced && npm run test:monitor && npm run test:pipeline && npm run test:disk-storage && npm run test:hybrid-buffer && npm run test:hybrid-buffer-simple && npm run test:system",
     "test:playlist": "node src/test/test-playlist.js",
     "test:buffer": "node src/test/test-buffer.js",
     "test:buffer-extended": "node src/test/test-buffer-extended.js",
@@ -19,6 +19,9 @@
     "test:downloader-enhanced": "node src/test/test-downloader-enhanced.js",
     "test:monitor": "node src/test/test-monitor.js",
     "test:pipeline": "node src/test/test-acquisition-pipeline.js",
+    "test:disk-storage": "node src/test/test-disk-storage.js",
+    "test:hybrid-buffer": "node src/test/test-hybrid-buffer.js",
+    "test:hybrid-buffer-simple": "node src/test/test-hybrid-buffer-simple.js",
     "test:system": "node test/system-test.js"
   },
   "keywords": [
