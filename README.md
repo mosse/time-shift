@@ -305,6 +305,22 @@ The system implements:
    echo "vm.swappiness=10" | sudo tee -a /etc/sysctl.conf
    sudo sysctl -p
    ```
+   
+   **What is swappiness?** 
+   Swappiness is a Linux kernel parameter that controls how aggressively the system swaps memory pages from RAM to the swap file. Values range from 0 to 100:
+   
+   - Higher values (default is 60) make the system more aggressive about moving memory to swap
+   - Lower values (like 10) tell the system to avoid swapping unless necessary
+   
+   **Why change it for this application?**
+   
+   - The time-shift buffer service keeps metadata indices in memory for performance
+   - SD cards have much slower read/write speeds than RAM
+   - Excessive swapping causes significant performance degradation on Raspberry Pi
+   - Lower swappiness reduces I/O operations on the SD card, extending card lifespan
+   - Setting it to 10 (not 0) still allows swapping when memory pressure is high
+   
+   This adjustment maintains responsive performance while still providing memory protection during peak loads.
 
 2. **Optimize file system for SD card longevity**
    ```bash
