@@ -4,6 +4,7 @@ const morgan = require('morgan');
 const cors = require('cors');
 const logger = require('./utils/logger');
 const { serviceManager } = require('./services');
+const { hybridBufferService } = require('./services/hybrid-buffer-service');
 const { PlaylistGenerator } = require('./services/playlist-generator');
 const config = require('./config/config');
 
@@ -17,7 +18,7 @@ const app = express();
 
 // Initialize playlist generator
 const playlistGenerator = new PlaylistGenerator({
-  bufferService: serviceManager.bufferService,
+  bufferService: hybridBufferService,
   timeShift: config.DELAY_DURATION || 28800000, // 8 hours
   baseUrl: `http://localhost:${config.PORT || 3000}`
 });

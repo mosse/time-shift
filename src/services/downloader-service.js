@@ -1,7 +1,8 @@
 const axios = require('axios');
 const EventEmitter = require('events');
 const logger = require('../utils/logger');
-const { bufferService } = require('./buffer-service');
+const { hybridBufferService } = require('./hybrid-buffer-service');
+const config = require('../config/config');
 
 /**
  * Enhanced Segment Downloader Service with retry logic, event emissions, and full integration
@@ -56,7 +57,7 @@ class DownloaderService extends EventEmitter {
     this.maxConcurrentDownloads = options.maxConcurrentDownloads || this.maxConcurrentDownloads;
     
     // Set buffer service reference
-    this.bufferService = options.bufferService || bufferService;
+    this.bufferService = options.bufferService || hybridBufferService;
     
     this.isInitialized = true;
     

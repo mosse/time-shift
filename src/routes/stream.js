@@ -1,6 +1,6 @@
 const express = require('express');
 const { playlistGenerator } = require('../services/playlist-generator');
-const { bufferService } = require('../services/buffer-service');
+const { hybridBufferService } = require('../services/hybrid-buffer-service');
 const logger = require('../utils/logger');
 const config = require('../config/config');
 const perf = require('perf_hooks').performance;
@@ -59,7 +59,7 @@ router.get('/stream/segment/:sequenceNumber.ts', (req, res) => {
     }
     
     // Retrieve the segment from the buffer
-    const segment = bufferService.getSegmentBySequence(sequenceNumber);
+    const segment = hybridBufferService.getSegmentBySequence(sequenceNumber);
     
     if (!segment) {
       logger.warn(`Segment not found: ${sequenceNumber}`);
@@ -140,7 +140,7 @@ router.get('/segments/:id', (req, res) => {
     logger.debug(`Looking for segment at time: ${new Date(timeShiftedTime).toISOString()}`);
     
     // Try to get the segment closest to the target time
-    const segment = bufferService.getSegmentAt(timeShiftedTime);
+    const segment = hybridBufferService.getSegmentAt(timeShiftedTime);
     
     if (!segment) {
       logger.warn(`No segment found for time: ${new Date(timeShiftedTime).toISOString()}`);
@@ -166,7 +166,7 @@ router.get('/segments/:id', (req, res) => {
       
       // Check a range of sequence numbers to find a better match
       for (let seq = lowerSequence; seq <= upperSequence; seq++) {
-        const candidateSegment = bufferService.getSegmentBySequence(seq);
+        const candidateSegment = hybridBufferService.getSegmentBySequence(seq);
         if (candidateSegment) {
           const candidateDifference = Math.abs(candidateSegment.timestamp - timeShiftedTime);
           if (candidateDifference < smallestDifference) {
@@ -296,7 +296,7 @@ router.get('/silence', (req, res) => {
 router.get('/stream/status', (req, res) => {
   try {
     // Get buffer stats
-    const bufferStats = bufferService.getBufferStats();
+    const bufferStats = hybridBufferService.getBufferStats();
     
     // Calculate streaming metrics
     const now = Date.now();
@@ -310,7 +310,7 @@ router.get('/stream/status', (req, res) => {
       newestBufferedTime >= timeShiftTarget;
     
     // Calculate buffer health
-    const bufferHealth = bufferService.getBufferHealth();
+    const bufferHealth = hybridBufferService.getBufferHealth();
     
     res.json({
       status: hasContentAtRequestedDelay ? 'ok' : 'limited',

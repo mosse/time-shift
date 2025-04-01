@@ -1,3 +1,9 @@
+/**
+ * DEPRECATED: This buffer service has been replaced by the hybrid-buffer-service.js implementation.
+ * Please use HybridBufferService instead which provides persistent storage with disk-based segment storage.
+ * This file is kept for backward compatibility but will be removed in a future release.
+ */
+
 const config = require('../config/config');
 const logger = require('../utils/logger');
 const EventEmitter = require('events');
@@ -6,10 +12,14 @@ const EventEmitter = require('events');
  * Buffer service for storing and managing media segments
  * Implements a circular buffer with timestamp-based access
  * Emits events for segment lifecycle management
+ * @deprecated Use HybridBufferService from hybrid-buffer-service.js instead
  */
 class BufferService extends EventEmitter {
   constructor(bufferDuration = config.BUFFER_DURATION) {
     super(); // Initialize EventEmitter
+    
+    // Log a warning that this service is deprecated
+    logger.warn('DEPRECATED: BufferService is deprecated and will be removed in a future release. Please use HybridBufferService instead.');
     
     this.bufferDuration = bufferDuration;
     this.segments = [];

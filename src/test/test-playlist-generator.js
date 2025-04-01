@@ -1,5 +1,6 @@
 const { playlistGenerator, PlaylistGenerator } = require('../services/playlist-generator');
 const { BufferService } = require('../services/buffer-service');
+const { HybridBufferService } = require('../services/hybrid-buffer-service');
 const logger = require('../utils/logger');
 const config = require('../config/config');
 const { Parser } = require('m3u8-parser');
@@ -40,30 +41,24 @@ async function testWithMockBuffer() {
     // Create a test instance of playlist generator that uses our mock buffer
     const testGenerator = new PlaylistGenerator({
       segmentCount: 5,
-      timeShiftDuration: 10000 // Small delay for testing
+      timeShiftDuration: 10000, // Small delay for testing
+      bufferService: mockBuffer // Pass the mock buffer service directly
     });
-    
-    // Replace the buffer reference with our mock
-    const origBufferService = require('../services/buffer-service').bufferService;
-    require('../services/buffer-service').bufferService = mockBuffer;
     
     // Generate a playlist
     const playlist = testGenerator.generatePlaylist();
     
-    // Restore original buffer service
-    require('../services/buffer-service').bufferService = origBufferService;
-    
     // Verify playlist is not empty
-    if (!playlist || playlist.length === 0) {
+    if (!playlist || !playlist.m3u8Content || playlist.m3u8Content.length === 0) {
       throw new Error('Generated playlist is empty');
     }
     
-    logger.info(`Generated playlist (${playlist.length} bytes):`);
-    logger.info(playlist.split('\n').slice(0, 10).join('\n') + '...');
+    logger.info(`Generated playlist (${playlist.m3u8Content.length} bytes):`);
+    logger.info(playlist.m3u8Content.split('\n').slice(0, 10).join('\n') + '...');
     
     // Parse the playlist to verify it's valid
     const parser = new Parser();
-    parser.push(playlist);
+    parser.push(playlist.m3u8Content);
     parser.end();
     const parsedPlaylist = parser.manifest;
     
@@ -94,28 +89,23 @@ async function testWithEmptyBuffer() {
     const emptyBuffer = new BufferService();
     
     // Create a test instance of playlist generator that uses our empty buffer
-    const testGenerator = new PlaylistGenerator();
-    
-    // Replace the buffer reference with our mock
-    const origBufferService = require('../services/buffer-service').bufferService;
-    require('../services/buffer-service').bufferService = emptyBuffer;
+    const testGenerator = new PlaylistGenerator({
+      bufferService: emptyBuffer // Pass the empty buffer service directly
+    });
     
     // Generate a playlist
     const playlist = testGenerator.generatePlaylist();
     
-    // Restore original buffer service
-    require('../services/buffer-service').bufferService = origBufferService;
-    
     // Verify playlist is not empty (should generate an empty playlist with correct headers)
-    if (!playlist || playlist.length === 0) {
+    if (!playlist || !playlist.m3u8Content || playlist.m3u8Content.length === 0) {
       throw new Error('Generated empty playlist is completely empty');
     }
     
-    logger.info(`Generated empty playlist (${playlist.length} bytes):`);
-    logger.info(playlist);
+    logger.info(`Generated empty playlist (${playlist.m3u8Content.length} bytes):`);
+    logger.info(playlist.m3u8Content);
     
     // Verify it contains the expected placeholder
-    if (!playlist.includes('unavailable.ts')) {
+    if (!playlist.m3u8Content.includes('unavailable.ts')) {
       throw new Error('Empty playlist should contain unavailable segment reference');
     }
     
@@ -141,18 +131,12 @@ async function testPlaylistFormat() {
     // Create a custom test instance of playlist generator
     const testGenerator = new PlaylistGenerator({
       segmentCount: 4,
-      timeShiftDuration: 10000 // Small delay for testing
+      timeShiftDuration: 10000, // Small delay for testing
+      bufferService: mockBuffer // Pass the mock buffer service directly
     });
-    
-    // Replace the buffer reference with our mock
-    const origBufferService = require('../services/buffer-service').bufferService;
-    require('../services/buffer-service').bufferService = mockBuffer;
     
     // Generate a playlist
     const playlist = testGenerator.generatePlaylist();
-    
-    // Restore original buffer service
-    require('../services/buffer-service').bufferService = origBufferService;
     
     // Check required HLS tags
     const requiredTags = [
@@ -164,14 +148,14 @@ async function testPlaylistFormat() {
     ];
     
     for (const tag of requiredTags) {
-      if (!playlist.includes(tag)) {
+      if (!playlist.m3u8Content.includes(tag)) {
         throw new Error(`Required HLS tag ${tag} missing from playlist`);
       }
     }
     
     // Parse the playlist to verify it's valid
     const parser = new Parser();
-    parser.push(playlist);
+    parser.push(playlist.m3u8Content);
     parser.end();
     const parsedPlaylist = parser.manifest;
     

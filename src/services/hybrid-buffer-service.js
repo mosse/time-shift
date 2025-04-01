@@ -386,10 +386,10 @@ class HybridBufferService extends EventEmitter {
       totalDuration: this.totalDuration,
       bufferTimeSpan: oldestSegment && newestSegment ?
         newestSegment.timestamp - oldestSegment.timestamp : 0,
-      oldestSegmentTime: oldestSegment ? 
-        new Date(oldestSegment.timestamp).toISOString() : null,
-      newestSegmentTime: newestSegment ? 
-        new Date(newestSegment.timestamp).toISOString() : null,
+      oldestTimestamp: oldestSegment ? 
+        oldestSegment.timestamp : null,
+      newestTimestamp: newestSegment ? 
+        newestSegment.timestamp : null,
       bufferDuration: this.bufferDuration,
       diskStorageEnabled: this.diskStorageEnabled,
       diskSegments: this.segments.filter(s => s.storedOnDisk).length,

@@ -5,7 +5,7 @@
 
 const { monitorService } = require('./monitor-service');
 const { downloaderService } = require('./downloader-service');
-const { bufferService } = require('./buffer-service');
+const { hybridBufferService } = require('./hybrid-buffer-service');
 const logger = require('../utils/logger');
 const config = require('../config/config');
 
@@ -39,8 +39,8 @@ class ServiceManager {
       return;
     }
     
-    // Initialize buffer service
-    bufferService.initialize({
+    // Initialize hybrid buffer service
+    hybridBufferService.initialize({
       duration: this.options.bufferDuration
     });
     
@@ -48,7 +48,7 @@ class ServiceManager {
     downloaderService.initialize({
       maxRetries: this.options.maxRetries,
       maxConcurrentDownloads: this.options.maxConcurrentDownloads,
-      bufferService // Pass buffer service reference
+      bufferService: hybridBufferService // Pass hybrid buffer service reference
     });
     
     // Configure monitor service
@@ -124,15 +124,15 @@ class ServiceManager {
     });
     
     // Buffer -> Service Manager: Monitor buffer capacity
-    bufferService.on('segmentAdded', (info) => {
+    hybridBufferService.on('segmentAdded', (info) => {
       logger.debug(`Pipeline: Segment added to buffer: ${info.segmentId}`);
     });
     
-    bufferService.on('segmentExpired', (info) => {
+    hybridBufferService.on('segmentExpired', (info) => {
       logger.debug(`Pipeline: Segment expired from buffer: ${info.segmentId}`);
     });
     
-    bufferService.on('bufferFull', () => {
+    hybridBufferService.on('bufferFull', () => {
       logger.warn('Pipeline: Buffer reached capacity');
     });
     
@@ -227,7 +227,7 @@ class ServiceManager {
       isRunning: this.isRunning,
       monitor: monitorService.getStatus(),
       downloader: downloaderService.getStats(),
-      buffer: bufferService.getStats()
+      buffer: hybridBufferService.getBufferStats() // Use the non-deprecated method
     };
   }
   
@@ -249,6 +249,9 @@ class ServiceManager {
 
 // Export singleton instance
 const serviceManager = new ServiceManager();
+
+// Make the hybrid buffer service available via the service manager
+serviceManager.bufferService = hybridBufferService;
 
 module.exports = {
   serviceManager,

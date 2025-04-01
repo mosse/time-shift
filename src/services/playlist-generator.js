@@ -1,7 +1,7 @@
 const path = require('path');
 const config = require('../config/config');
 const logger = require('../utils/logger');
-const { bufferService } = require('./buffer-service');
+const { hybridBufferService } = require('./hybrid-buffer-service');
 
 /**
  * Playlist Generator Service
@@ -16,6 +16,9 @@ class PlaylistGenerator {
       playlistVersion: options.playlistVersion || 3,
       ...options
     };
+    
+    // Use the provided buffer service or default to hybridBufferService
+    this.bufferService = options.bufferService || hybridBufferService;
     
     logger.info(`Initialized playlist generator with time shift: ${this.options.timeShiftDuration}ms`);
   }
@@ -47,10 +50,10 @@ class PlaylistGenerator {
       logger.info(`Generating playlist for target time: ${new Date(targetTime).toISOString()}`);
       
       // Get segment around the target time
-      const anchorSegment = bufferService.getSegmentAt(targetTime);
+      const anchorSegment = this.bufferService.getSegmentAt(targetTime);
       
       if (!anchorSegment) {
-        const oldestTime = bufferService.getOldestSegmentTime();
+        const oldestTime = this.bufferService.getOldestSegmentTime();
         if (oldestTime) {
           logger.warn(`Target time ${new Date(targetTime).toISOString()} is earlier than oldest segment ${new Date(oldestTime).toISOString()}`);
         } else {
@@ -72,7 +75,7 @@ class PlaylistGenerator {
       let maxDuration = 0;
       
       for (let seq = startSequence; seq <= endSequence; seq++) {
-        const segment = bufferService.getSegmentBySequence(seq);
+        const segment = this.bufferService.getSegmentBySequence(seq);
         if (segment) {
           playlistSegments.push(segment);
           maxDuration = Math.max(maxDuration, segment.metadata.duration || 0);
