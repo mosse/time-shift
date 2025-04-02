@@ -33,49 +33,39 @@ class HybridBufferService extends EventEmitter {
    * @param {boolean} [options.skipCleanup] - Whether to skip clearing the buffer
    */
   async initialize(options = {}) {
-    // Apply configuration if provided
-    if (options.duration) {
-      this.bufferDuration = options.duration;
-    }
-    
-    if (options.diskStorageEnabled !== undefined) {
-      this.diskStorageEnabled = options.diskStorageEnabled;
-    }
-    
-    // Clear any existing data unless skipCleanup is true
-    if (!options.skipCleanup) {
-      this.clear();
-    }
-    
-    // Initialize disk storage if enabled
-    if (this.diskStorageEnabled) {
-      try {
+    try {
+      // Reset state if requested
+      if (options.reset) {
+        this.clear();
+      }
+      
+      // Update disk storage setting if provided
+      if (options.diskStorageEnabled !== undefined) {
+        this.diskStorageEnabled = options.diskStorageEnabled;
+      }
+      
+      // Initialize disk storage if enabled
+      if (this.diskStorageEnabled) {
         await diskStorageService.initialize();
         
-        // Load any existing metadata
+        // Load existing metadata from disk
         await this._loadMetadataFromDisk();
-        
-        logger.info('Disk storage initialized for buffer');
-      } catch (error) {
-        logger.error(`Failed to initialize disk storage: ${error.message}`);
-        // Continue with in-memory only as fallback
-        this.diskStorageEnabled = false;
-        logger.warn('Falling back to in-memory storage only');
       }
+      
+      logger.info(`Initialized hybrid buffer service with disk storage ${this.diskStorageEnabled ? 'enabled' : 'disabled'}`);
+      
+      // Emit initialized event
+      this.emit('initialized', {
+        diskStorageEnabled: this.diskStorageEnabled,
+        segmentCount: this.segments.length,
+        totalSize: this.totalSize
+      });
+      
+      return true;
+    } catch (error) {
+      logger.error(`Failed to initialize hybrid buffer service: ${error.message}`);
+      throw error;
     }
-    
-    // Set up automatic cleanup
-    this.setupCleanupInterval();
-    
-    logger.info(`Initialized hybrid buffer service with duration: ${this.bufferDuration}ms, disk storage: ${this.diskStorageEnabled}`);
-    
-    // Emit initialized event
-    this.emit('initialized', {
-      duration: this.bufferDuration,
-      diskStorageEnabled: this.diskStorageEnabled
-    });
-    
-    return this;
   }
   
   /**
@@ -758,25 +748,48 @@ class HybridBufferService extends EventEmitter {
       
       // Check each segment exists on disk before adding to buffer
       for (const segment of metadata.segments) {
-        // Only add if the segment exists on disk
-        if (segment.storedOnDisk && segment.metadata.segmentId) {
-          const exists = await diskStorageService.segmentExists(segment.metadata.segmentId);
+        // Handle both old and new metadata formats
+        const segmentId = segment.metadata?.segmentId || segment.metadata?.url?.split('/').pop()?.split('?')[0];
+        const sequenceNumber = segment.metadata?.sequenceNumber;
+        const duration = segment.metadata?.duration || 0;
+        const timestamp = segment.timestamp || Date.now();
+        
+        // Only add if we have a valid segment ID and the segment exists on disk
+        if (segmentId) {
+          const exists = await diskStorageService.segmentExists(segmentId);
           
           if (exists) {
-            // Add to in-memory indexes
-            this.segments.push(segment);
-            this.segmentsByTimestamp.set(segment.timestamp, segment);
+            // Create a clean segment object with all required fields
+            const cleanSegment = {
+              timestamp,
+              metadata: {
+                ...segment.metadata,
+                segmentId,
+                sequenceNumber: sequenceNumber || 0,
+                duration: duration || 0,
+                addedAt: segment.metadata?.addedAt || new Date(timestamp).toISOString()
+              },
+              size: segment.size || 0,
+              storedOnDisk: true,
+              filePath: segment.filePath
+            };
             
-            if (segment.metadata.sequenceNumber !== undefined) {
-              this.segmentsBySequence.set(segment.metadata.sequenceNumber, segment);
+            // Add to in-memory indexes
+            this.segments.push(cleanSegment);
+            this.segmentsByTimestamp.set(cleanSegment.timestamp, cleanSegment);
+            
+            if (cleanSegment.metadata.sequenceNumber !== undefined) {
+              this.segmentsBySequence.set(cleanSegment.metadata.sequenceNumber, cleanSegment);
             }
             
             // Update stats
-            this.totalSize += segment.size;
-            this.totalDuration += segment.metadata.duration || 0;
+            this.totalSize += cleanSegment.size;
+            this.totalDuration += cleanSegment.metadata.duration;
           } else {
-            logger.warn(`Segment ${segment.metadata.segmentId} referenced in metadata not found on disk`);
+            logger.warn(`Segment ${segmentId} referenced in metadata not found on disk`);
           }
+        } else {
+          logger.warn('Segment in metadata missing required segmentId');
         }
       }
       
