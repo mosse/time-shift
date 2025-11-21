@@ -26,11 +26,25 @@ const playlistGenerator = new PlaylistGenerator({
 // Make playlist generator available to routes
 app.set('playlistGenerator', playlistGenerator);
 
-// Configure CORS
+// Configure CORS - restrict origins in production
+const getCorsOrigin = () => {
+  // If CORS_ORIGINS is set, use it (comma-separated list)
+  if (process.env.CORS_ORIGINS) {
+    const origins = process.env.CORS_ORIGINS.split(',').map(o => o.trim());
+    return origins.length === 1 ? origins[0] : origins;
+  }
+  // In production without explicit config, deny cross-origin requests
+  if (process.env.NODE_ENV === 'production') {
+    return false;
+  }
+  // In development, allow all origins
+  return '*';
+};
+
 const corsOptions = {
-  origin: '*', // In production, restrict this to specific origins
+  origin: getCorsOrigin(),
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Range', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Range', 'Authorization', 'X-API-Key'],
   exposedHeaders: ['Content-Length', 'Content-Range', 'Accept-Ranges'],
   maxAge: 600 // Cache preflight requests for 10 minutes
 };

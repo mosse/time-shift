@@ -42,7 +42,7 @@ router.get('/stream.m3u8', (req, res) => {
  * Segment endpoint
  * Returns a specific segment from the buffer
  */
-router.get('/stream/segment/:sequenceNumber.ts', (req, res) => {
+router.get('/stream/segment/:sequenceNumber.ts', async (req, res) => {
   const startTime = perf.now();
   let success = false;
   
@@ -59,7 +59,7 @@ router.get('/stream/segment/:sequenceNumber.ts', (req, res) => {
     }
     
     // Retrieve the segment from the buffer
-    const segment = hybridBufferService.getSegmentBySequence(sequenceNumber);
+    const segment = await hybridBufferService.getSegmentBySequence(sequenceNumber);
     
     if (!segment) {
       logger.warn(`Segment not found: ${sequenceNumber}`);
@@ -69,14 +69,23 @@ router.get('/stream/segment/:sequenceNumber.ts', (req, res) => {
       });
     }
     
+    // Verify segment data is available
+    if (!segment.data) {
+      logger.error(`Segment ${sequenceNumber} found but data is missing`);
+      return res.status(500).json({
+        status: 'error',
+        message: 'Segment data unavailable'
+      });
+    }
+
     // Set appropriate headers
     res.set({
       'Content-Type': 'video/mp2t',
       'Cache-Control': 'public, max-age=86400', // Cache segments for up to 24 hours
-      'Content-Length': segment.size,
+      'Content-Length': segment.size || segment.data.length,
       'Access-Control-Allow-Origin': '*'
     });
-    
+
     // Send the segment data
     res.send(Buffer.from(segment.data));
     success = true;
@@ -102,7 +111,7 @@ router.get('/stream/segment/:sequenceNumber.ts', (req, res) => {
  * Time-shifted segment delivery endpoint 
  * Calculates and delivers the segment from 8 hours ago
  */
-router.get('/segments/:id', (req, res) => {
+router.get('/segments/:id', async (req, res) => {
   const startTime = perf.now();
   let success = false;
   let fallbackUsed = false;
@@ -140,7 +149,7 @@ router.get('/segments/:id', (req, res) => {
     logger.debug(`Looking for segment at time: ${new Date(timeShiftedTime).toISOString()}`);
     
     // Try to get the segment closest to the target time
-    const segment = hybridBufferService.getSegmentAt(timeShiftedTime);
+    let segment = await hybridBufferService.getSegmentAt(timeShiftedTime);
     
     if (!segment) {
       logger.warn(`No segment found for time: ${new Date(timeShiftedTime).toISOString()}`);
@@ -166,7 +175,7 @@ router.get('/segments/:id', (req, res) => {
       
       // Check a range of sequence numbers to find a better match
       for (let seq = lowerSequence; seq <= upperSequence; seq++) {
-        const candidateSegment = hybridBufferService.getSegmentBySequence(seq);
+        const candidateSegment = await hybridBufferService.getSegmentBySequence(seq);
         if (candidateSegment) {
           const candidateDifference = Math.abs(candidateSegment.timestamp - timeShiftedTime);
           if (candidateDifference < smallestDifference) {
@@ -175,7 +184,7 @@ router.get('/segments/:id', (req, res) => {
           }
         }
       }
-      
+
       if (bestSegment !== segment) {
         logger.debug(`Found better segment with sequence ${bestSegment.metadata.sequenceNumber}, ${smallestDifference}ms from target`);
         segment = bestSegment;
@@ -194,18 +203,27 @@ router.get('/segments/:id', (req, res) => {
       }
     }
     
+    // Verify segment data is available
+    if (!segment.data) {
+      logger.error(`Segment ${segmentId} found but data is missing`);
+      return res.status(500).json({
+        status: 'error',
+        message: 'Segment data unavailable'
+      });
+    }
+
     // Set appropriate headers
     res.set({
       'Content-Type': contentType,
-      'Content-Length': segment.size,
+      'Content-Length': segment.size || segment.data.length,
       'Cache-Control': 'public, max-age=86400', // Cache segments for up to 24 hours
       'Access-Control-Allow-Origin': '*',
-      'X-Sequence-Number': segment.metadata.sequenceNumber || 0,
+      'X-Sequence-Number': segment.metadata?.sequenceNumber || 0,
       'X-Segment-Timestamp': segment.timestamp,
-      'X-Segment-Duration': segment.metadata.duration || 0,
+      'X-Segment-Duration': segment.metadata?.duration || 0,
       'X-Fallback-Used': fallbackUsed ? 'true' : 'false'
     });
-    
+
     // Send the segment data
     res.send(Buffer.from(segment.data));
     success = true;

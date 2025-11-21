@@ -8,6 +8,90 @@ const { serviceManager } = require('../services');
 const logger = require('../utils/logger');
 
 /**
+ * Admin authentication middleware
+ * Protects administrative endpoints with API key authentication
+ */
+const adminAuth = (req, res, next) => {
+  const apiKey = req.headers['x-api-key'] || req.query.apiKey;
+  const validKey = process.env.ADMIN_API_KEY;
+
+  // If no key is configured
+  if (!validKey) {
+    // In production, deny all admin access when key not configured
+    if (process.env.NODE_ENV === 'production') {
+      logger.warn('Admin endpoint accessed without ADMIN_API_KEY configured in production');
+      return res.status(403).json({
+        status: 'error',
+        message: 'Admin access is disabled. Configure ADMIN_API_KEY to enable.'
+      });
+    }
+    // In development, allow access but log a warning
+    logger.warn('Admin endpoint accessed without ADMIN_API_KEY configured (allowed in development)');
+    return next();
+  }
+
+  // Verify API key
+  if (!apiKey) {
+    logger.warn('Admin endpoint accessed without API key');
+    return res.status(401).json({
+      status: 'error',
+      message: 'API key required. Provide X-API-Key header or apiKey query parameter.'
+    });
+  }
+
+  if (apiKey !== validKey) {
+    logger.warn('Admin endpoint accessed with invalid API key');
+    return res.status(401).json({
+      status: 'error',
+      message: 'Invalid API key'
+    });
+  }
+
+  next();
+};
+
+/**
+ * Input validation helpers
+ */
+const validatePlaylistParams = (req, res, next) => {
+  const errors = [];
+
+  // Validate duration
+  if (req.query.duration !== undefined) {
+    const duration = parseInt(req.query.duration, 10);
+    if (isNaN(duration) || duration < 1 || duration > 3600) {
+      errors.push('duration must be a number between 1 and 3600 seconds');
+    }
+  }
+
+  // Validate format
+  if (req.query.format !== undefined) {
+    const validFormats = ['m3u8', 'json'];
+    if (!validFormats.includes(req.query.format)) {
+      errors.push(`format must be one of: ${validFormats.join(', ')}`);
+    }
+  }
+
+  // Validate timeshift
+  if (req.query.timeshift !== undefined) {
+    const timeshift = parseInt(req.query.timeshift, 10);
+    if (isNaN(timeshift) || timeshift < 0 || timeshift > 86400000) {
+      errors.push('timeshift must be a number between 0 and 86400000 milliseconds (24 hours)');
+    }
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Validation failed',
+      errors
+    });
+  }
+
+  next();
+};
+
+/**
  * @route   GET /api/health
  * @desc    Get system health status
  * @access  Public
@@ -92,13 +176,13 @@ router.get('/segments', (req, res) => {
  * @desc    Generate a playlist for time-shifted content
  * @access  Public
  */
-router.get('/playlist', (req, res) => {
+router.get('/playlist', validatePlaylistParams, (req, res) => {
   try {
-    const duration = parseInt(req.query.duration) || 300; // Default 5 minutes
+    const duration = parseInt(req.query.duration, 10) || 300; // Default 5 minutes
     const format = req.query.format || 'm3u8';
     // Allow overriding the time shift for testing purposes
-    const timeshift = req.query.timeshift !== undefined ? 
-      parseInt(req.query.timeshift) : undefined;
+    const timeshift = req.query.timeshift !== undefined ?
+      parseInt(req.query.timeshift, 10) : undefined;
     
     const playlistGenerator = req.app.get('playlistGenerator');
     
@@ -132,9 +216,9 @@ router.get('/playlist', (req, res) => {
 /**
  * @route   GET /api/restart
  * @desc    Restart the pipeline if needed
- * @access  Protected - In a production app, would require auth
+ * @access  Protected - Requires ADMIN_API_KEY authentication
  */
-router.get('/restart', async (req, res) => {
+router.get('/restart', adminAuth, async (req, res) => {
   try {
     logger.info('Received request to restart pipeline');
     
