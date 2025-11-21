@@ -33,17 +33,24 @@ A Node.js application for time-shifting HLS radio streams with persistent storag
 
 Stream URLs and time settings can be configured in `src/config/config.js`. The following environment variables can be set:
 
+### Server Settings
 - `PORT`: Server port (default: 3000)
+- `NODE_ENV`: Environment mode - `development` or `production` (default: development)
 - `LOG_LEVEL`: Logging level (default: info)
+
+### Security Settings (New)
+- `ADMIN_API_KEY`: API key for admin endpoints like `/api/restart`. **Required in production** - without it, admin endpoints return 403.
+- `CORS_ORIGINS`: Comma-separated list of allowed origins for CORS. **Required in production** for cross-origin requests. Example: `http://localhost:3000,http://192.168.1.100:3000`
+
+### Pipeline Settings
 - `HEALTH_CHECK_INTERVAL`: Interval for health checks in ms (default: 60000)
 - `MONITOR_INTERVAL`: Interval for stream monitoring in ms (default: 5000)
 - `MAX_RETRIES`: Maximum download retries (default: 3)
 - `MAX_CONCURRENT_DOWNLOADS`: Maximum concurrent downloads (default: 3)
 - `SHUTDOWN_TIMEOUT`: Timeout for graceful shutdown in ms (default: 10000)
-- `BUFFER_DURATION`: Duration of the buffer in ms (default: 30600000, which is 8.5 hours)
-- `STORAGE_BASE_DIR`: Directory for storing segments (default: 'data')
-- `STORAGE_SEGMENTS_DIR`: Subdirectory for segments (default: 'segments')
-- `STORAGE_METADATA_FILE`: Filename for buffer metadata (default: 'buffer-metadata.json')
+
+### Storage Settings
+- `STORAGE_DIR`: Directory for storing segments (default: './data')
 
 ### Configuring a Custom Stream Source
 
@@ -117,11 +124,20 @@ All services are orchestrated by a central Service Manager that handles:
 
 ## API Endpoints
 
-- `/api/health`: System health status
-- `/api/status`: Detailed system status and metrics
-- `/api/segments`: List of segments in buffer
-- `/api/playlist`: Generate time-shifted playlist
-- `/api/restart`: Restart the acquisition pipeline
+### Public Endpoints
+- `GET /api/health`: System health status
+- `GET /api/status`: Detailed system status and metrics
+- `GET /api/segments`: List of segments in buffer
+- `GET /api/playlist`: Generate time-shifted playlist (supports `duration`, `format`, `timeshift` query params)
+
+### Protected Endpoints (require `X-API-Key` header or `apiKey` query param)
+- `GET /api/restart`: Restart the acquisition pipeline
+
+### Streaming Endpoints
+- `GET /stream.m3u8`: Main HLS playlist
+- `GET /stream/segment/:sequenceNumber.ts`: Individual segment by sequence number
+- `GET /segments/:id`: Time-shifted segment by ID/timestamp
+- `GET /stream/status`: Current buffer status for streaming
 
 ## Testing
 
@@ -207,12 +223,12 @@ The system implements:
 
 2. **Install Node.js**
    ```bash
-   # Install Node.js repository
-   curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-   
+   # Install Node.js 20.x LTS (recommended)
+   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+
    # Install Node.js
    sudo apt install -y nodejs
-   
+
    # Verify installation
    node --version
    npm --version
@@ -237,44 +253,74 @@ The system implements:
 
 4. **Configure the Application**
    ```bash
+   # Generate a secure API key
+   GENERATED_KEY=$(openssl rand -hex 32)
+
    # Create environment variables file
    cat > .env << EOF
+   # Server
    PORT=3000
+   NODE_ENV=production
+
+   # Security (REQUIRED for production)
+   ADMIN_API_KEY=${GENERATED_KEY}
+   CORS_ORIGINS=http://localhost:3000
+
+   # Logging
    LOG_LEVEL=info
-   BUFFER_DURATION=30600000
-   STORAGE_BASE_DIR=data
-   STORAGE_SEGMENTS_DIR=segments
-   STORAGE_METADATA_FILE=buffer-metadata.json
-   STREAM_URL=https://your-stream-provider.com/your-stream-url.m3u8
-   TIME_SHIFT=28800000
+
+   # Storage
+   STORAGE_DIR=./data
    EOF
+
+   # Display the generated API key (save this!)
+   echo ""
+   echo "=========================================="
+   echo "Your ADMIN_API_KEY: ${GENERATED_KEY}"
+   echo "=========================================="
+   echo "Save this key! You need it to use /api/restart"
+   ```
+
+   **Important:** The `ADMIN_API_KEY` is required in production to access admin endpoints like `/api/restart`. Without it, these endpoints will return 403 Forbidden.
+
+   If you need to access the service from other devices on your network, update `CORS_ORIGINS`:
+   ```bash
+   # Example: Allow access from any device on your local network
+   CORS_ORIGINS=http://192.168.1.100:3000,http://localhost:3000
    ```
 
 5. **Set Up Systemd Service for Auto-start**
+
+   **Note:** Replace `pi` with your actual username if different (check with `whoami`).
+
    ```bash
+   # Get current username
+   CURRENT_USER=$(whoami)
+
    # Create service file
-   sudo bash -c 'cat > /etc/systemd/system/timeshift.service << EOF
+   sudo bash -c "cat > /etc/systemd/system/timeshift.service << EOF
    [Unit]
    Description=Time-Shift Radio Service
    After=network.target
-   
+
    [Service]
    Type=simple
-   User=pi
-   WorkingDirectory=/home/pi/apps/time-shift
+   User=${CURRENT_USER}
+   WorkingDirectory=/home/${CURRENT_USER}/apps/time-shift
+   EnvironmentFile=/home/${CURRENT_USER}/apps/time-shift/.env
    ExecStart=/usr/bin/node src/index.js
    Restart=always
    RestartSec=10
    StandardOutput=syslog
    StandardError=syslog
    SyslogIdentifier=timeshift
-   Environment=NODE_ENV=production
-   
+
    [Install]
    WantedBy=multi-user.target
-   EOF'
-   
-   # Enable and start the service
+   EOF"
+
+   # Reload systemd, enable and start the service
+   sudo systemctl daemon-reload
    sudo systemctl enable timeshift
    sudo systemctl start timeshift
    ```
@@ -290,13 +336,37 @@ The system implements:
 
 7. **Set Up Storage Management (Optional)**
    ```bash
-   # Create a daily cron job to clean up old log files
-   (crontab -l 2>/dev/null; echo "0 0 * * * find /home/pi/apps/time-shift/logs -name \"*.log.\" -mtime +7 -delete") | crontab -
+   # Create a daily cron job to clean up old log files (runs at midnight)
+   (crontab -l 2>/dev/null; echo "0 0 * * * find ~/apps/time-shift/logs -name '*.log*' -mtime +7 -delete") | crontab -
    ```
 
-8. **Access the Web Interface**
-   
+8. **Configure Firewall (Recommended)**
+   ```bash
+   # Install and configure UFW firewall
+   sudo apt install -y ufw
+
+   # Allow SSH (important - don't lock yourself out!)
+   sudo ufw allow 22/tcp
+
+   # Allow the time-shift service
+   sudo ufw allow 3000/tcp
+
+   # Enable the firewall
+   sudo ufw enable
+
+   # Check status
+   sudo ufw status
+   ```
+
+9. **Access the Web Interface**
+
    Open a browser and navigate to `http://<raspberry-pi-ip>:3000`
+
+   To use the admin restart endpoint:
+   ```bash
+   # Using curl with your API key
+   curl -H "X-API-Key: YOUR_ADMIN_API_KEY" http://localhost:3000/api/restart
+   ```
 
 ### Performance Tuning
 
