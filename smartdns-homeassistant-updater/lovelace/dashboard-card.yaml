@@ -1,0 +1,323 @@
+# ============================================================================
+# SmartDNSProxy IP Updater - Lovelace Dashboard Card
+# ============================================================================
+#
+# This file contains example Lovelace cards for displaying SmartDNS updater
+# information on your Home Assistant dashboard
+#
+# HOW TO ADD:
+# 1. Go to your Home Assistant dashboard
+# 2. Click the three dots (top right) > Edit Dashboard
+# 3. Click "+ Add Card" > Manual Card
+# 4. Copy and paste one of the card configurations below
+# 5. Click Save
+#
+
+# ============================================================================
+# CARD 1: Simple Status Card
+# ============================================================================
+# A basic card showing current IP and status
+# Requires: sensor.smartdns_current_ip (see sensors.yaml.example)
+
+type: entities
+title: SmartDNS Proxy Status
+icon: mdi:ip-network
+show_header_toggle: false
+entities:
+  - entity: sensor.smartdns_current_ip
+    name: Current Public IP
+    icon: mdi:ip
+  - entity: sensor.smartdns_last_update
+    name: Last Updated
+    icon: mdi:clock-outline
+  - entity: sensor.smartdns_update_status
+    name: Status
+    icon: mdi:information-outline
+
+# ============================================================================
+# CARD 2: Detailed Status Card with Manual Update Button
+# ============================================================================
+# More detailed card with a button to trigger manual updates
+# Requires: sensors + script.smartdns_manual_update (see configuration.yaml)
+
+type: vertical-stack
+cards:
+  # Status information
+  - type: entities
+    title: SmartDNS Proxy
+    icon: mdi:ip-network
+    show_header_toggle: false
+    entities:
+      - entity: sensor.smartdns_current_ip
+        name: Public IP Address
+        icon: mdi:ip
+      - entity: sensor.smartdns_last_update
+        name: Last Updated
+        icon: mdi:clock-outline
+      - type: divider
+      - entity: binary_sensor.smartdns_api_healthy
+        name: API Status
+      - entity: sensor.smartdns_update_status
+        name: Last Log Entry
+        icon: mdi:text-box-outline
+
+  # Manual update button
+  - type: button
+    name: Update SmartDNS Now
+    icon: mdi:refresh
+    tap_action:
+      action: call-service
+      service: script.smartdns_manual_update
+    hold_action:
+      action: none
+
+# ============================================================================
+# CARD 3: Compact Glance Card
+# ============================================================================
+# A compact card showing key information at a glance
+
+type: glance
+title: SmartDNS Status
+columns: 3
+show_name: true
+show_icon: true
+show_state: true
+entities:
+  - entity: sensor.smartdns_current_ip
+    name: Public IP
+  - entity: binary_sensor.smartdns_api_healthy
+    name: API Health
+  - entity: sensor.smartdns_last_update
+    name: Last Check
+
+# ============================================================================
+# CARD 4: Advanced Card with Markdown
+# ============================================================================
+# Uses markdown to create a custom formatted display
+
+type: markdown
+content: |
+  ## SmartDNS Proxy Status
+
+  **Current Public IP:**
+  `{{ states('sensor.smartdns_current_ip') }}`
+
+  **Last Updated:**
+  {{ states('sensor.smartdns_last_update') }}
+
+  **IP Stability:**
+  {{ states('sensor.smartdns_ip_stability') }}
+
+  **API Status:**
+  {% if is_state('binary_sensor.smartdns_api_healthy', 'on') %}
+  ✅ Healthy
+  {% else %}
+  ❌ Error
+  {% endif %}
+
+  ---
+
+  **Recent Activity:**
+  {{ states('sensor.smartdns_update_status') }}
+
+title: SmartDNS Monitor
+card_mod:
+  style: |
+    ha-card {
+      border-left: 4px solid var(--primary-color);
+    }
+
+# ============================================================================
+# CARD 5: Full Dashboard with Auto-Update Toggle
+# ============================================================================
+# Complete dashboard with all features including enable/disable toggle
+# Requires: All sensors + input_boolean.smartdns_auto_update
+
+type: vertical-stack
+cards:
+  # Header
+  - type: markdown
+    content: |
+      # 🌐 SmartDNS Proxy Manager
+
+  # Main status
+  - type: entities
+    show_header_toggle: false
+    entities:
+      # Auto-update toggle
+      - entity: input_boolean.smartdns_auto_update
+        name: Automatic Updates
+        icon: mdi:sync
+        secondary_info: last-changed
+
+      - type: divider
+
+      # Current IP
+      - entity: sensor.smartdns_current_ip
+        name: Public IP Address
+        icon: mdi:ip
+        secondary_info: last-changed
+
+      # Last update time
+      - entity: sensor.smartdns_last_update
+        name: Last Check
+        icon: mdi:clock-outline
+
+      # IP stability
+      - entity: sensor.smartdns_ip_stability
+        name: IP Stable For
+        icon: mdi:timer-outline
+
+      - type: divider
+
+      # API health
+      - entity: binary_sensor.smartdns_api_healthy
+        name: API Status
+        icon: mdi:api
+
+  # Action buttons
+  - type: horizontal-stack
+    cards:
+      - type: button
+        name: Update Now
+        icon: mdi:refresh
+        tap_action:
+          action: call-service
+          service: script.smartdns_manual_update
+        entity: script.smartdns_manual_update
+
+      - type: button
+        name: View Logs
+        icon: mdi:text-box-search
+        tap_action:
+          action: url
+          url_path: /config/logs/smartdns_updates.log
+
+  # Recent activity log
+  - type: markdown
+    content: |
+      **Recent Activity:**
+      ```
+      {{ states('sensor.smartdns_update_status') }}
+      ```
+    title: Latest Log Entry
+
+# ============================================================================
+# CARD 6: Minimal Card (Just IP)
+# ============================================================================
+# Very simple card showing just the current IP
+
+type: entity
+entity: sensor.smartdns_current_ip
+name: Public IP Address
+icon: mdi:ip-network
+
+# ============================================================================
+# CARD 7: Badge Style (for Header)
+# ============================================================================
+# Small badge-style display, good for the header area
+
+type: entity
+entity: sensor.smartdns_current_ip
+name: Public IP
+icon: mdi:ip
+attribute: state
+
+# ============================================================================
+# CARD 8: Gauge Card (API Health Percentage)
+# ============================================================================
+# Shows API health as a visual gauge
+# This is conceptual - requires custom sensor for success percentage
+
+type: gauge
+entity: sensor.smartdns_success_rate
+name: API Success Rate
+unit: '%'
+min: 0
+max: 100
+severity:
+  green: 90
+  yellow: 70
+  red: 0
+needle: true
+
+# ============================================================================
+# CARD 9: History Graph
+# ============================================================================
+# Shows IP changes over time (requires history integration)
+
+type: history-graph
+title: Public IP History
+hours_to_show: 24
+refresh_interval: 0
+entities:
+  - entity: sensor.smartdns_current_ip
+    name: Public IP
+
+# ============================================================================
+# CARD 10: Conditional Card
+# ============================================================================
+# Only shows when there's an error
+
+type: conditional
+conditions:
+  - entity: binary_sensor.smartdns_api_healthy
+    state: 'off'
+card:
+  type: markdown
+  content: |
+    ## ⚠️ SmartDNS Error
+
+    There's an issue with SmartDNS updates.
+
+    **Current IP:** {{ states('sensor.smartdns_current_ip') }}
+
+    **Status:** {{ states('sensor.smartdns_update_status') }}
+
+    Check `/config/logs/smartdns_updates.log` for details.
+  card_mod:
+    style: |
+      ha-card {
+        border: 2px solid red;
+        background-color: rgba(255, 0, 0, 0.1);
+      }
+
+# ============================================================================
+# USAGE NOTES
+# ============================================================================
+#
+# 1. Copy the YAML for the card you want to use
+#
+# 2. Add it to your dashboard:
+#    - Edit Dashboard > Add Card > Manual Card
+#    - Paste the YAML
+#    - Click Save
+#
+# 3. Required sensors:
+#    - Most cards require sensors from sensors.yaml.example
+#    - Create those sensors first
+#    - Wait for sensors to populate with data
+#
+# 4. Customize:
+#    - Change colors by modifying the styles
+#    - Adjust which entities to show
+#    - Combine multiple card types
+#
+# 5. Troubleshooting:
+#    - If entities show "unavailable", check sensor configuration
+#    - If cards don't render, check YAML syntax
+#    - Some cards require custom integrations (card-mod, etc.)
+#
+# ============================================================================
+# CUSTOM CARD INTEGRATION (Optional)
+# ============================================================================
+#
+# For more advanced cards, consider installing HACS and custom cards:
+#
+# - button-card: https://github.com/custom-cards/button-card
+# - mini-graph-card: https://github.com/kalkih/mini-graph-card
+# - mushroom-cards: https://github.com/piitaya/lovelace-mushroom
+# - card-mod: https://github.com/thomasloven/lovelace-card-mod
+#
+# These provide more styling options and advanced features.
+#

@@ -1,0 +1,87 @@
+# ============================================================================
+# SmartDNSProxy IP Updater - Home Assistant Configuration
+# ============================================================================
+#
+# Add these entries to your Home Assistant configuration.yaml file
+#
+# IMPORTANT: After adding these, you must reload your configuration or restart
+# Home Assistant for changes to take effect.
+#
+
+# ============================================================================
+# SHELL COMMANDS
+# ============================================================================
+# These commands call the SmartDNS update script with your API key
+
+shell_command:
+  # Main command - updates SmartDNS when IP changes
+  # Uses API key from secrets.yaml (recommended method)
+  smartdns_update: "bash /config/scripts/smartdns_update.sh {{ smartdns_api_key }}"
+
+  # Alternative: Test mode - checks IP but doesn't call API
+  # Useful for testing the setup
+  smartdns_update_test: "bash /config/scripts/smartdns_update.sh {{ smartdns_api_key }} --test"
+
+# ============================================================================
+# ALTERNATIVE: Direct API Key (Not Recommended)
+# ============================================================================
+# If you prefer not to use secrets.yaml, you can hard-code the API key here
+# WARNING: Less secure, and the key may be visible in logs or backups
+#
+# shell_command:
+#   smartdns_update: "bash /config/scripts/smartdns_update.sh YOUR_API_KEY_HERE"
+
+# ============================================================================
+# SENSORS (Optional)
+# ============================================================================
+# Uncomment to add sensors that track your public IP and update status
+# See sensors.yaml.example for the complete sensor configuration
+
+# sensor: !include sensors.yaml
+
+# ============================================================================
+# INPUT BOOLEAN (Optional)
+# ============================================================================
+# Uncomment to add a toggle for enabling/disabling automatic updates
+# from the Home Assistant UI
+
+# input_boolean:
+#   smartdns_auto_update:
+#     name: SmartDNS Auto Update
+#     icon: mdi:ip-network
+#     initial: true
+
+# ============================================================================
+# SCRIPT (Optional)
+# ============================================================================
+# Uncomment to add a manual update button in the UI
+
+# script:
+#   smartdns_manual_update:
+#     alias: Update SmartDNS Manually
+#     icon: mdi:ip-network
+#     sequence:
+#       - service: shell_command.smartdns_update
+#       - service: persistent_notification.create
+#         data:
+#           title: "SmartDNS Update"
+#           message: "Manual IP update triggered. Check logs for results."
+#           notification_id: smartdns_manual_update
+
+# ============================================================================
+# NOTES
+# ============================================================================
+#
+# 1. The script file must be located at: /config/scripts/smartdns_update.sh
+#
+# 2. If using secrets.yaml (recommended), add this line to /config/secrets.yaml:
+#    smartdns_api_key: "YOUR_API_KEY_HERE"
+#
+# 3. The {{ smartdns_api_key }} syntax references the secret defined in secrets.yaml
+#
+# 4. After making changes, reload configuration:
+#    Developer Tools > YAML > Check Configuration
+#    Then click "Restart" or reload just the changed sections
+#
+# 5. See automations.yaml.example for setting up automatic periodic updates
+#

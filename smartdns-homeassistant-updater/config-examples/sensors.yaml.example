@@ -1,0 +1,173 @@
+# ============================================================================
+# SmartDNSProxy IP Updater - Sensors (Optional)
+# ============================================================================
+#
+# These sensors track your public IP and update status in Home Assistant
+#
+# To use these sensors:
+# 1. Add this line to your configuration.yaml:
+#    sensor: !include sensors.yaml
+#
+# 2. Copy this file to: /config/sensors.yaml
+#
+# 3. Reload configuration: Developer Tools > YAML > Sensors
+#
+
+# ============================================================================
+# SENSOR 1: Current Public IP
+# ============================================================================
+# Reads your current public IP from the file created by the update script
+
+- platform: file
+  name: "SmartDNS Current IP"
+  file_path: /config/smartdns_last_ip.txt
+  icon: mdi:ip-network
+  scan_interval: 60  # Check every 60 seconds
+
+# ============================================================================
+# SENSOR 2: Last Update Time
+# ============================================================================
+# Shows when the IP file was last modified (last time IP was updated)
+
+- platform: file
+  name: "SmartDNS Last Update"
+  file_path: /config/smartdns_last_ip.txt
+  value_template: >
+    {% set file = '/config/smartdns_last_ip.txt' %}
+    {% if states.sensor.smartdns_current_ip %}
+      {{ as_timestamp(now()) | timestamp_custom('%Y-%m-%d %H:%M:%S') }}
+    {% else %}
+      Unknown
+    {% endif %}
+  icon: mdi:clock-outline
+  scan_interval: 60
+
+# ============================================================================
+# SENSOR 3: Update Status (Advanced)
+# ============================================================================
+# Reads the last log entry to show update status
+# This is more complex and requires the log file to exist
+
+- platform: command_line
+  name: "SmartDNS Update Status"
+  command: "tail -n 1 /config/logs/smartdns_updates.log 2>/dev/null || echo 'No logs yet'"
+  icon: mdi:information-outline
+  scan_interval: 300  # Check every 5 minutes
+
+# ============================================================================
+# SENSOR 4: IP Stability (Template Sensor)
+# ============================================================================
+# Shows how long the current IP has been stable
+# Add this to configuration.yaml under 'template:' section instead
+
+# template:
+#   - sensor:
+#       - name: "SmartDNS IP Stability"
+#         unique_id: smartdns_ip_stability
+#         icon: mdi:timer-outline
+#         state: >
+#           {% set last_change = state_attr('sensor.smartdns_current_ip', 'last_changed') %}
+#           {% if last_change %}
+#             {% set seconds = (now() - last_change).total_seconds() %}
+#             {% if seconds < 60 %}
+#               {{ seconds | int }} seconds
+#             {% elif seconds < 3600 %}
+#               {{ (seconds / 60) | int }} minutes
+#             {% elif seconds < 86400 %}
+#               {{ (seconds / 3600) | int }} hours
+#             {% else %}
+#               {{ (seconds / 86400) | int }} days
+#             {% endif %}
+#           {% else %}
+#             Unknown
+#           {% endif %}
+
+# ============================================================================
+# SENSOR 5: Success/Failure Counter (Template Sensor)
+# ============================================================================
+# Counts successful vs failed updates from the log file
+# Add this to configuration.yaml under 'template:' section
+
+# template:
+#   - sensor:
+#       - name: "SmartDNS Success Count"
+#         unique_id: smartdns_success_count
+#         icon: mdi:check-circle
+#         state: >
+#           {{ states.sensor.smartdns_update_status.state | regex_findall('success', ignorecase=True) | length }}
+#
+#       - name: "SmartDNS Error Count"
+#         unique_id: smartdns_error_count
+#         icon: mdi:alert-circle
+#         state: >
+#           {{ states.sensor.smartdns_update_status.state | regex_findall('error|fail', ignorecase=True) | length }}
+
+# ============================================================================
+# BINARY SENSOR: API Health Status
+# ============================================================================
+# Shows if the SmartDNS API is healthy based on recent logs
+
+- platform: template
+  sensors:
+    smartdns_api_healthy:
+      friendly_name: "SmartDNS API Healthy"
+      icon_template: >
+        {% if is_state('binary_sensor.smartdns_api_healthy', 'on') %}
+          mdi:check-network
+        {% else %}
+          mdi:close-network
+        {% endif %}
+      value_template: >
+        {% set log_content = states('sensor.smartdns_update_status') %}
+        {{ 'success' in log_content.lower() or 'unchanged' in log_content.lower() }}
+
+# ============================================================================
+# USAGE NOTES
+# ============================================================================
+#
+# 1. File Sensors:
+#    - Require the files to exist (/config/smartdns_last_ip.txt)
+#    - Will show "unknown" until first update runs
+#
+# 2. Command Line Sensors:
+#    - Require shell command execution
+#    - May be slower than file sensors
+#    - Good for reading log files
+#
+# 3. Template Sensors:
+#    - More flexible and powerful
+#    - Can combine multiple sensor values
+#    - Should be in configuration.yaml under 'template:' section
+#
+# 4. Scan Interval:
+#    - Lower values = more frequent updates, more system load
+#    - Higher values = less load but slower to reflect changes
+#    - 60 seconds is a good balance
+#
+# 5. After adding sensors:
+#    Developer Tools > YAML > Check Configuration
+#    Then reload: Developer Tools > YAML > Sensors
+#
+# ============================================================================
+# ADVANCED: History & Statistics
+# ============================================================================
+#
+# To track IP changes over time, add to configuration.yaml:
+#
+# history:
+#   include:
+#     entities:
+#       - sensor.smartdns_current_ip
+#       - sensor.smartdns_last_update
+#
+# recorder:
+#   include:
+#     entities:
+#       - sensor.smartdns_current_ip
+#       - sensor.smartdns_last_update
+#
+# This allows you to:
+# - See IP change history in the History panel
+# - Create statistics cards showing IP change frequency
+# - Track how often your ISP changes your IP
+#

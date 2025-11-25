@@ -1,0 +1,134 @@
+# ============================================================================
+# SmartDNSProxy IP Updater - Settings (Optional)
+# ============================================================================
+#
+# This file contains optional settings for customizing the SmartDNS updater
+# behavior. These settings are currently for reference only - the script
+# uses hardcoded values for simplicity and reliability.
+#
+# LOCATION: /config/smartdns_settings.yaml (optional)
+#
+# Future versions may read these settings to allow customization without
+# modifying the script.
+#
+
+# ============================================================================
+# UPDATE FREQUENCY
+# ============================================================================
+# How often to check for IP changes (in minutes)
+# Configured in automations.yaml via time_pattern trigger
+# Recommended: 5-10 minutes
+
+check_interval_minutes: 5
+
+# ============================================================================
+# TIMEOUTS
+# ============================================================================
+# Network timeout for IP detection services (seconds)
+# Lower values fail faster but may miss slow responses
+# Higher values are more reliable but take longer
+
+curl_timeout: 10
+
+# Script must complete within this time (seconds)
+# Home Assistant OS enforces a 60-second limit for shell commands
+script_timeout: 55
+
+# ============================================================================
+# LOGGING
+# ============================================================================
+# Log file location (must be in /config for persistence)
+log_file: "/config/logs/smartdns_updates.log"
+
+# Log level options: DEBUG, INFO, WARN, ERROR
+# DEBUG: Verbose logging including all API calls
+# INFO: Normal logging (recommended)
+# WARN: Only warnings and errors
+# ERROR: Only errors
+
+log_level: "INFO"
+
+# Maximum log file size (MB) before rotation
+# Note: Current script does not implement log rotation
+# You may need to manually clean logs periodically
+max_log_size_mb: 10
+
+# ============================================================================
+# IP DETECTION
+# ============================================================================
+# Services used to detect public IP (in order of preference)
+# The script tries each service until one succeeds
+
+ip_detection_services:
+  - "https://icanhazip.com"
+  - "https://api.ipify.org"
+  - "https://ifconfig.me/ip"
+  # DNS fallback (requires dig command)
+  - "opendns"  # Special value for DNS-based detection
+
+# ============================================================================
+# FILE LOCATIONS
+# ============================================================================
+# Where the script stores its data files
+# All paths must be in /config for persistence across reboots
+
+last_ip_file: "/config/smartdns_last_ip.txt"
+lock_file: "/config/smartdns_update.lock"
+
+# ============================================================================
+# API CONFIGURATION
+# ============================================================================
+# SmartDNSProxy API endpoint (base URL without key)
+api_endpoint: "https://www.smartdnsproxy.com/api/IP/update"
+
+# API timeout (seconds)
+api_timeout: 10
+
+# Retry on API failure
+# Note: Current script does not implement retries
+# Failed updates will retry on the next scheduled run
+api_retry_count: 0
+api_retry_delay: 5
+
+# ============================================================================
+# ADVANCED OPTIONS
+# ============================================================================
+
+# Enable test mode (doesn't actually call API)
+# Useful for testing IP detection without using API calls
+test_mode: false
+
+# Lock file timeout (seconds)
+# How long to wait for another instance to finish before giving up
+lock_timeout: 30
+
+# Stale lock age (seconds)
+# If lock file is older than this, consider it stale and remove it
+stale_lock_age: 300
+
+# ============================================================================
+# NOTIFICATIONS (Planned Feature)
+# ============================================================================
+# Future versions may support built-in notifications
+
+notify_on_ip_change: true
+notify_on_error: false
+notification_service: "persistent_notification"
+
+# ============================================================================
+# NOTES
+# ============================================================================
+#
+# IMPORTANT: The current version of the script does NOT read this file.
+# These settings are hardcoded in the script for simplicity and reliability.
+#
+# This file is provided as:
+# 1. Documentation of default values
+# 2. A template for future customization features
+# 3. A reference for users who want to modify the script
+#
+# To change these settings currently, you must edit the script directly:
+# /config/scripts/smartdns_update.sh
+#
+# Future versions may add support for reading this configuration file.
+#

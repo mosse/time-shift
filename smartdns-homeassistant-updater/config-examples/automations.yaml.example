@@ -1,0 +1,193 @@
+# ============================================================================
+# SmartDNSProxy IP Updater - Automations
+# ============================================================================
+#
+# Add these automations to your Home Assistant automations.yaml file
+# or create them via the UI (Settings > Automations & Scenes > Create Automation)
+#
+# These automations handle periodic IP checking and optional notifications
+#
+
+# ============================================================================
+# AUTOMATION 1: Periodic IP Check (Every 5 Minutes)
+# ============================================================================
+# This is the main automation that checks your IP every 5 minutes
+# The script only calls the SmartDNS API if the IP has actually changed
+
+- id: smartdns_ip_check_periodic
+  alias: "SmartDNS: Check IP Every 5 Minutes"
+  description: "Periodically checks public IP and updates SmartDNSProxy when it changes"
+
+  trigger:
+    # Run every 5 minutes
+    - platform: time_pattern
+      minutes: "/5"
+
+  condition: []
+
+  action:
+    - service: shell_command.smartdns_update
+
+  mode: single
+  max_exceeded: silent
+
+# ============================================================================
+# ALTERNATIVE: Every 10 Minutes (Less Frequent)
+# ============================================================================
+# Uncomment this and comment out the above if you prefer less frequent checks
+# This reduces system load and log entries
+
+# - id: smartdns_ip_check_periodic_10min
+#   alias: "SmartDNS: Check IP Every 10 Minutes"
+#   description: "Periodically checks public IP and updates SmartDNSProxy when it changes"
+#
+#   trigger:
+#     - platform: time_pattern
+#       minutes: "/10"
+#
+#   condition: []
+#
+#   action:
+#     - service: shell_command.smartdns_update
+#
+#   mode: single
+#   max_exceeded: silent
+
+# ============================================================================
+# AUTOMATION 2: Check on Home Assistant Start (Optional)
+# ============================================================================
+# Checks IP immediately when Home Assistant starts
+# Useful to ensure SmartDNS is updated after a restart
+
+- id: smartdns_ip_check_on_start
+  alias: "SmartDNS: Check IP on Home Assistant Start"
+  description: "Updates SmartDNSProxy when Home Assistant starts"
+
+  trigger:
+    - platform: homeassistant
+      event: start
+
+  condition: []
+
+  action:
+    # Wait 60 seconds for network to be ready
+    - delay: "00:01:00"
+    - service: shell_command.smartdns_update
+
+  mode: single
+
+# ============================================================================
+# AUTOMATION 3: Manual Update from UI (Optional)
+# ============================================================================
+# Uncomment to add a button in the UI for manual updates
+# Requires the input_boolean.smartdns_manual_trigger helper
+
+# - id: smartdns_manual_update_trigger
+#   alias: "SmartDNS: Manual Update Trigger"
+#   description: "Triggers SmartDNS update when toggle is activated"
+#
+#   trigger:
+#     - platform: state
+#       entity_id: input_boolean.smartdns_manual_trigger
+#       to: "on"
+#
+#   condition: []
+#
+#   action:
+#     - service: shell_command.smartdns_update
+#     - delay: "00:00:02"
+#     - service: input_boolean.turn_off
+#       target:
+#         entity_id: input_boolean.smartdns_manual_trigger
+#     - service: persistent_notification.create
+#       data:
+#         title: "SmartDNS Update"
+#         message: "Manual IP update completed. Check logs for results."
+#         notification_id: smartdns_manual
+#
+#   mode: single
+
+# ============================================================================
+# AUTOMATION 4: IP Change Notification (Optional)
+# ============================================================================
+# Sends a notification when your public IP changes
+# Requires the sensor.smartdns_current_ip sensor (see sensors.yaml.example)
+
+# - id: smartdns_ip_change_notification
+#   alias: "SmartDNS: Notify on IP Change"
+#   description: "Sends notification when public IP address changes"
+#
+#   trigger:
+#     - platform: state
+#       entity_id: sensor.smartdns_current_ip
+#
+#   condition:
+#     # Only notify if the old state was not unknown/unavailable
+#     - condition: template
+#       value_template: "{{ trigger.from_state.state not in ['unknown', 'unavailable', 'none'] }}"
+#
+#   action:
+#     # Persistent notification in Home Assistant
+#     - service: persistent_notification.create
+#       data:
+#         title: "Public IP Address Changed"
+#         message: >
+#           Your public IP has changed:
+#           Old IP: {{ trigger.from_state.state }}
+#           New IP: {{ trigger.to_state.state }}
+#           SmartDNSProxy has been updated automatically.
+#         notification_id: smartdns_ip_changed
+#
+#     # Optional: Send mobile notification (requires Home Assistant app)
+#     # - service: notify.mobile_app_your_phone
+#     #   data:
+#     #     title: "Public IP Changed"
+#     #     message: "New IP: {{ trigger.to_state.state }}"
+#
+#   mode: single
+
+# ============================================================================
+# AUTOMATION 5: Conditional Updates (Optional)
+# ============================================================================
+# Only runs if the smartdns_auto_update toggle is enabled
+# Requires input_boolean.smartdns_auto_update (see configuration.yaml.example)
+
+# - id: smartdns_ip_check_conditional
+#   alias: "SmartDNS: Check IP (Conditional)"
+#   description: "Checks IP only if auto-update is enabled"
+#
+#   trigger:
+#     - platform: time_pattern
+#       minutes: "/5"
+#
+#   condition:
+#     - condition: state
+#       entity_id: input_boolean.smartdns_auto_update
+#       state: "on"
+#
+#   action:
+#     - service: shell_command.smartdns_update
+#
+#   mode: single
+
+# ============================================================================
+# NOTES
+# ============================================================================
+#
+# 1. After adding automations, reload automations:
+#    Developer Tools > YAML > Automations
+#
+# 2. You can also create these via the UI:
+#    Settings > Automations & Scenes > Create Automation > Start with an empty automation
+#
+# 3. The mode: single ensures only one instance runs at a time
+#    The max_exceeded: silent prevents warnings if another instance tries to start
+#
+# 4. Adjust the time_pattern minutes value to change check frequency:
+#    minutes: "/5"  = every 5 minutes
+#    minutes: "/10" = every 10 minutes
+#    minutes: "/15" = every 15 minutes
+#
+# 5. Check logs to verify automations are working:
+#    /config/logs/smartdns_updates.log
+#

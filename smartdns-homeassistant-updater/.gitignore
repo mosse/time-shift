@@ -1,0 +1,275 @@
+# ============================================================================
+# SmartDNS Home Assistant Updater - Git Ignore
+# ============================================================================
+# Files and directories that should never be committed to version control
+# This protects sensitive information and prevents clutter
+
+# ============================================================================
+# SENSITIVE FILES - NEVER COMMIT THESE!
+# ============================================================================
+
+# Secrets and API keys
+secrets.yaml
+secrets.yml
+**/secrets.yaml
+**/secrets.yml
+.secrets
+*.secret
+*.key
+
+# Files containing API keys or tokens
+*api_key*
+*token*
+.env
+.env.local
+.env.*.local
+
+# Home Assistant specific secrets
+home-assistant_v2.db-shm
+home-assistant_v2.db-wal
+*.db-shm
+*.db-wal
+
+# ============================================================================
+# LOG FILES
+# ============================================================================
+
+# All log files
+*.log
+*.log.*
+logs/
+**/logs/
+smartdns_updates.log
+smartdns_*.log
+
+# Debug logs
+debug.log
+debug_*.log
+*.debug
+
+# ============================================================================
+# RUNTIME FILES
+# ============================================================================
+
+# Lock files
+*.lock
+smartdns_update.lock
+
+# PID files
+*.pid
+
+# Temporary IP storage (contains your public IP)
+smartdns_last_ip.txt
+*_last_ip.txt
+
+# Backup files
+*.backup
+*.bak
+*.old
+*~
+
+# ============================================================================
+# HOME ASSISTANT FILES
+# ============================================================================
+
+# Home Assistant database
+home-assistant.log
+home-assistant_v2.db
+*.db
+
+# Home Assistant cache
+.storage/
+.cloud/
+.google.token
+.uuid
+
+# OZW (OpenZWave) files
+OZW_Log.txt
+ozw.sqlite
+
+# ============================================================================
+# OPERATING SYSTEM FILES
+# ============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ============================================================================
+# EDITOR / IDE FILES
+# ============================================================================
+
+# VS Code
+.vscode/
+*.code-workspace
+.history/
+
+# IntelliJ / PyCharm
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+Session.vim
+.netrwhist
+
+# Emacs
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+
+# ============================================================================
+# DEVELOPMENT / BUILD FILES
+# ============================================================================
+
+# Node modules (if you add any JS tooling)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Python (if you add Python scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Test coverage
+.coverage
+htmlcov/
+*.cover
+
+# ============================================================================
+# DOCUMENTATION BUILD FILES
+# ============================================================================
+
+# Generated documentation
+_site/
+.sass-cache/
+.jekyll-cache/
+.jekyll-metadata
+
+# ============================================================================
+# VERSION CONTROL
+# ============================================================================
+
+# Git
+*.orig
+*.rej
+.git/
+
+# ============================================================================
+# MISC
+# ============================================================================
+
+# Archives (might contain sensitive data)
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# Certificates and keys
+*.pem
+*.crt
+*.cer
+*.p12
+*.pfx
+*.key
+*.pub
+
+# SQLite databases (might contain sensitive data)
+*.sqlite
+*.sqlite3
+*.db
+
+# Personal notes
+TODO.md
+NOTES.md
+notes.txt
+todo.txt
+
+# Custom user configurations (not examples)
+configuration.yaml
+automations.yaml
+scripts.yaml
+sensors.yaml
+customize.yaml
+groups.yaml
+scenes.yaml
+
+# But KEEP example files
+!*.example
+!*example*.yaml
+!config-examples/
+
+# ============================================================================
+# PROJECT SPECIFIC
+# ============================================================================
+
+# Test files with real credentials
+test_with_real_key.sh
+*_test_real*
+
+# Local development overrides
+local.yaml
+*.local.yaml
+
+# ============================================================================
+# EXCEPTIONS - ALWAYS INCLUDE THESE
+# ============================================================================
+
+# Keep example configuration files
+!config-examples/
+!config-examples/*.example
+!config-examples/*.yaml
+
+# Keep template files
+!lovelace/*.yaml
+
+# Keep documentation
+!docs/
+!*.md
+
+# Keep the main script
+!scripts/smartdns_update.sh
