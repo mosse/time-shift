@@ -46,31 +46,31 @@ async function testWithMockBuffer() {
     });
     
     // Generate a playlist
-    const playlist = testGenerator.generatePlaylist();
-    
+    const playlist = await testGenerator.generatePlaylist();
+
     // Verify playlist is not empty
     if (!playlist || !playlist.m3u8Content || playlist.m3u8Content.length === 0) {
       throw new Error('Generated playlist is empty');
     }
-    
+
     logger.info(`Generated playlist (${playlist.m3u8Content.length} bytes):`);
     logger.info(playlist.m3u8Content.split('\n').slice(0, 10).join('\n') + '...');
-    
+
     // Parse the playlist to verify it's valid
     const parser = new Parser();
     parser.push(playlist.m3u8Content);
     parser.end();
     const parsedPlaylist = parser.manifest;
-    
+
     // Verify playlist has segments
     if (!parsedPlaylist.segments || parsedPlaylist.segments.length === 0) {
       throw new Error('Playlist has no segments');
     }
-    
+
     logger.info(`Playlist contains ${parsedPlaylist.segments.length} segments`);
     logger.info('First segment duration:', parsedPlaylist.segments[0].duration);
     logger.info('Mock buffer test passed');
-    
+
     return parsedPlaylist;
   } catch (error) {
     logger.error(`Error in mock buffer test: ${error.message}`);
@@ -84,33 +84,33 @@ async function testWithMockBuffer() {
 async function testWithEmptyBuffer() {
   try {
     logger.info('Testing playlist generation with empty buffer');
-    
+
     // Create an empty mock buffer service
     const emptyBuffer = new BufferService();
-    
+
     // Create a test instance of playlist generator that uses our empty buffer
     const testGenerator = new PlaylistGenerator({
       bufferService: emptyBuffer // Pass the empty buffer service directly
     });
-    
+
     // Generate a playlist
-    const playlist = testGenerator.generatePlaylist();
-    
+    const playlist = await testGenerator.generatePlaylist();
+
     // Verify playlist is not empty (should generate an empty playlist with correct headers)
     if (!playlist || !playlist.m3u8Content || playlist.m3u8Content.length === 0) {
       throw new Error('Generated empty playlist is completely empty');
     }
-    
+
     logger.info(`Generated empty playlist (${playlist.m3u8Content.length} bytes):`);
     logger.info(playlist.m3u8Content);
-    
+
     // Verify it contains the expected placeholder
     if (!playlist.m3u8Content.includes('unavailable.ts')) {
       throw new Error('Empty playlist should contain unavailable segment reference');
     }
-    
+
     logger.info('Empty buffer test passed');
-    
+
     return playlist;
   } catch (error) {
     logger.error(`Error in empty buffer test: ${error.message}`);
@@ -124,19 +124,19 @@ async function testWithEmptyBuffer() {
 async function testPlaylistFormat() {
   try {
     logger.info('Testing playlist format validation');
-    
+
     // Create a mock buffer service with test segments
     const mockBuffer = createMockBufferService();
-    
+
     // Create a custom test instance of playlist generator
     const testGenerator = new PlaylistGenerator({
       segmentCount: 4,
       timeShiftDuration: 10000, // Small delay for testing
       bufferService: mockBuffer // Pass the mock buffer service directly
     });
-    
+
     // Generate a playlist
-    const playlist = testGenerator.generatePlaylist();
+    const playlist = await testGenerator.generatePlaylist();
     
     // Check required HLS tags
     const requiredTags = [

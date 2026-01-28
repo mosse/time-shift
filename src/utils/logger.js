@@ -112,7 +112,7 @@ const enhancedLogger = {
       status: res.statusCode,
       responseTime,
       userAgent: req.headers['user-agent'],
-      ip: req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress
+      ip: req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress
     });
   },
   

@@ -31,27 +31,33 @@ class PlaylistGenerator {
    * @param {string} options.baseUrl - Base URL for segment URLs
    * @returns {Object} - Generated playlist data with m3u8 content
    */
-  generatePlaylist(options = {}) {
+  async generatePlaylist(options = {}) {
     try {
-      const { 
+      const {
         segmentCount = this.options.segmentCount,
         timeshift = undefined,
         baseUrl = ''
       } = options;
-      
+
       // Calculate target time (current time - delay)
       const now = Date.now();
       // Use provided timeshift if available, otherwise use default
-      const timeShiftDuration = timeshift !== undefined ? 
-                               parseInt(timeshift) * 1000 : // Convert seconds to ms if provided
-                               this.options.timeShiftDuration;
-      
+      let timeShiftDuration = this.options.timeShiftDuration;
+      if (timeshift !== undefined) {
+        const parsed = parseInt(timeshift);
+        if (isNaN(parsed) || parsed < 0) {
+          logger.warn(`Invalid timeshift value: ${timeshift}, using default`);
+        } else {
+          timeShiftDuration = parsed * 1000; // Convert seconds to ms
+        }
+      }
+
       const targetTime = now - timeShiftDuration;
       logger.info(`Generating playlist for target time: ${new Date(targetTime).toISOString()}`);
-      
+
       // Get segment around the target time
-      const anchorSegment = this.bufferService.getSegmentAt(targetTime);
-      
+      const anchorSegment = await this.bufferService.getSegmentAt(targetTime);
+
       if (!anchorSegment) {
         const oldestTime = this.bufferService.getOldestSegmentTime();
         if (oldestTime) {
@@ -61,21 +67,21 @@ class PlaylistGenerator {
         }
         return this._generateEmptyPlaylist(baseUrl);
       }
-      
+
       // Find the sequence number of the anchor segment
       const anchorSequence = anchorSegment.metadata.sequenceNumber;
       logger.debug(`Found anchor segment with sequence: ${anchorSequence}`);
-      
+
       // Calculate sequence range (anchor segment should be in the middle)
       const startSequence = Math.max(0, anchorSequence - Math.floor(segmentCount / 2));
       const endSequence = startSequence + segmentCount - 1;
-      
+
       // Collect segments
       const playlistSegments = [];
       let maxDuration = 0;
-      
+
       for (let seq = startSequence; seq <= endSequence; seq++) {
-        const segment = this.bufferService.getSegmentBySequence(seq);
+        const segment = await this.bufferService.getSegmentBySequence(seq);
         if (segment) {
           playlistSegments.push(segment);
           maxDuration = Math.max(maxDuration, segment.metadata.duration || 0);
@@ -83,15 +89,15 @@ class PlaylistGenerator {
           logger.warn(`Segment with sequence number ${seq} not found`);
         }
       }
-      
+
       if (playlistSegments.length === 0) {
         logger.warn('No valid segments found for playlist');
         return this._generateEmptyPlaylist(baseUrl);
       }
-      
+
       // Sort segments by sequence number to ensure correct order
       playlistSegments.sort((a, b) => a.metadata.sequenceNumber - b.metadata.sequenceNumber);
-      
+
       return this._formatPlaylist(playlistSegments, maxDuration, baseUrl);
     } catch (error) {
       logger.error(`Error generating playlist: ${error}`);

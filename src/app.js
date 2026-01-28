@@ -1,6 +1,5 @@
 const express = require('express');
 const path = require('path');
-const morgan = require('morgan');
 const cors = require('cors');
 const logger = require('./utils/logger');
 const { serviceManager } = require('./services');
@@ -38,30 +37,15 @@ const corsOptions = {
 // Apply middleware
 app.use(cors(corsOptions));
 
-// Setup request logging with built-in response time
-app.use(morgan(':method :url :status :response-time ms - :res[content-length]', { 
-  stream: { 
-    write: message => {
-      const parts = message.split(' ');
-      // Extract response time from log message
-      const responseTimeIndex = parts.findIndex(part => part.endsWith('ms'));
-      if (responseTimeIndex > 0) {
-        const responseTime = parseFloat(parts[responseTimeIndex]);
-        if (!isNaN(responseTime)) {
-          // Use enhanced logger to track request metrics
-          logger.request(
-            { method: parts[0], url: parts[1], headers: {} },
-            { statusCode: parseInt(parts[2]) },
-            responseTime
-          );
-          return;
-        }
-      }
-      // Fallback to simple logging if response time not found
-      logger.info(message.trim());
-    } 
-  } 
-}));
+// Request logging middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    logger.request(req, res, duration);
+  });
+  next();
+});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));

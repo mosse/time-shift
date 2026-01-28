@@ -1,6 +1,6 @@
 const express = require('express');
 const { serviceManager } = require('../services');
-const { bufferService } = require('../services/buffer-service');
+const { hybridBufferService } = require('../services/hybrid-buffer-service');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -20,7 +20,7 @@ router.get('/health', (req, res) => {
     services: {
       pipeline: isRunning,
       monitor: pipelineStatus.monitor ? pipelineStatus.monitor.isRunning : false,
-      buffer: typeof bufferService.isInitialized === 'function' ? bufferService.isInitialized() : false,
+      buffer: typeof hybridBufferService.isInitialized === 'function' ? hybridBufferService.isInitialized() : false,
       downloader: pipelineStatus.downloader ? pipelineStatus.downloader.activeDownloads >= 0 : false
     }
   });
@@ -33,7 +33,7 @@ router.get('/health', (req, res) => {
 router.get('/stats', (req, res) => {
   try {
     // Get detailed statistics from the services
-    const bufferStats = bufferService.getBufferStats();
+    const bufferStats = hybridBufferService.getBufferStats();
     const pipelineStatus = serviceManager.getPipelineStatus();
     
     res.json({
