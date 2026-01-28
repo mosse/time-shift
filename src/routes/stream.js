@@ -11,13 +11,13 @@ const router = express.Router();
  * Main HLS playlist endpoint
  * Returns a time-shifted playlist based on current buffer state
  */
-router.get('/stream.m3u8', (req, res) => {
+router.get('/stream.m3u8', async (req, res) => {
   try {
     logger.info('Playlist requested');
-    
+
     // Generate a playlist with default settings
-    const playlist = playlistGenerator.generatePlaylist();
-    
+    const playlist = await playlistGenerator.generatePlaylist();
+
     // Set appropriate headers
     res.set({
       'Content-Type': 'application/vnd.apple.mpegurl',
@@ -25,8 +25,8 @@ router.get('/stream.m3u8', (req, res) => {
       'Access-Control-Allow-Origin': '*',
       'X-Content-Type-Options': 'nosniff'
     });
-    
-    res.send(playlist);
+
+    res.send(playlist.m3u8Content);
     logger.debug('Playlist served successfully');
   } catch (error) {
     logger.error(`Error serving playlist: ${error.message}`);
@@ -42,14 +42,14 @@ router.get('/stream.m3u8', (req, res) => {
  * Segment endpoint
  * Returns a specific segment from the buffer
  */
-router.get('/stream/segment/:sequenceNumber.ts', (req, res) => {
+router.get('/stream/segment/:sequenceNumber.ts', async (req, res) => {
   const startTime = perf.now();
   let success = false;
-  
+
   try {
     const sequenceNumber = parseInt(req.params.sequenceNumber, 10);
     logger.info(`Segment requested: ${sequenceNumber}`);
-    
+
     if (isNaN(sequenceNumber)) {
       logger.warn(`Invalid sequence number requested: ${req.params.sequenceNumber}`);
       return res.status(400).json({
@@ -57,10 +57,10 @@ router.get('/stream/segment/:sequenceNumber.ts', (req, res) => {
         message: 'Invalid sequence number'
       });
     }
-    
+
     // Retrieve the segment from the buffer
-    const segment = hybridBufferService.getSegmentBySequence(sequenceNumber);
-    
+    const segment = await hybridBufferService.getSegmentBySequence(sequenceNumber);
+
     if (!segment) {
       logger.warn(`Segment not found: ${sequenceNumber}`);
       return res.status(404).json({
@@ -68,7 +68,7 @@ router.get('/stream/segment/:sequenceNumber.ts', (req, res) => {
         message: 'Segment not found'
       });
     }
-    
+
     // Set appropriate headers
     res.set({
       'Content-Type': 'video/mp2t',
@@ -76,11 +76,11 @@ router.get('/stream/segment/:sequenceNumber.ts', (req, res) => {
       'Content-Length': segment.size,
       'Access-Control-Allow-Origin': '*'
     });
-    
+
     // Send the segment data
     res.send(Buffer.from(segment.data));
     success = true;
-    
+
     const responseTime = perf.now() - startTime;
     logger.debug(`Segment ${sequenceNumber} served successfully in ${responseTime.toFixed(2)}ms`);
   } catch (error) {
@@ -102,26 +102,26 @@ router.get('/stream/segment/:sequenceNumber.ts', (req, res) => {
  * Time-shifted segment delivery endpoint 
  * Calculates and delivers the segment from 8 hours ago
  */
-router.get('/segments/:id', (req, res) => {
+router.get('/segments/:id', async (req, res) => {
   const startTime = perf.now();
   let success = false;
   let fallbackUsed = false;
-  
+
   try {
     const segmentId = req.params.id;
     logger.info(`Time-shifted segment requested: ${segmentId}`);
-    
+
     // Parse segment ID (could be numeric or a timestamp)
     let targetTime;
-    
+
     if (/^\d+$/.test(segmentId)) {
       // If it's a numeric ID, assume it's a timestamp in milliseconds
       targetTime = parseInt(segmentId, 10);
-      
+
       // If the number is too small to be a valid timestamp, it might be a sequence number
       if (targetTime < 1000000000000) {
         logger.debug(`Segment ID ${segmentId} interpreted as sequence number`);
-        
+
         // Convert to current time minus delay
         const now = Date.now();
         targetTime = now - config.DELAY_DURATION;
@@ -134,39 +134,39 @@ router.get('/segments/:id', (req, res) => {
         message: 'Invalid segment ID format'
       });
     }
-    
+
     // Calculate the time-shifted target (current time - delay)
     const timeShiftedTime = targetTime;
     logger.debug(`Looking for segment at time: ${new Date(timeShiftedTime).toISOString()}`);
-    
+
     // Try to get the segment closest to the target time
-    const segment = hybridBufferService.getSegmentAt(timeShiftedTime);
-    
+    let segment = await hybridBufferService.getSegmentAt(timeShiftedTime);
+
     if (!segment) {
       logger.warn(`No segment found for time: ${new Date(timeShiftedTime).toISOString()}`);
       return res.redirect('/stream/unavailable.ts');
     }
-    
+
     // Calculate how far off the segment is from the requested time
     const timeDifference = Math.abs(segment.timestamp - timeShiftedTime);
     const maxAcceptableDifference = 30 * 1000; // 30 seconds in milliseconds
-    
+
     if (timeDifference > maxAcceptableDifference) {
       logger.warn(`Found segment is ${timeDifference}ms away from requested time, exceeding the ${maxAcceptableDifference}ms threshold`);
       fallbackUsed = true;
-      
+
       // Try to find a better segment by sequence number if this is too far off
       const sequenceRangeWidth = 10;
       const sequenceNumber = segment.metadata.sequenceNumber;
       const lowerSequence = Math.max(0, sequenceNumber - sequenceRangeWidth);
       const upperSequence = sequenceNumber + sequenceRangeWidth;
-      
+
       let bestSegment = segment;
       let smallestDifference = timeDifference;
-      
+
       // Check a range of sequence numbers to find a better match
       for (let seq = lowerSequence; seq <= upperSequence; seq++) {
-        const candidateSegment = hybridBufferService.getSegmentBySequence(seq);
+        const candidateSegment = await hybridBufferService.getSegmentBySequence(seq);
         if (candidateSegment) {
           const candidateDifference = Math.abs(candidateSegment.timestamp - timeShiftedTime);
           if (candidateDifference < smallestDifference) {
@@ -175,13 +175,13 @@ router.get('/segments/:id', (req, res) => {
           }
         }
       }
-      
+
       if (bestSegment !== segment) {
         logger.debug(`Found better segment with sequence ${bestSegment.metadata.sequenceNumber}, ${smallestDifference}ms from target`);
         segment = bestSegment;
       }
     }
-    
+
     // Set appropriate content type based on file extension if available
     let contentType = 'audio/mpeg';
     if (segment.metadata.url) {
@@ -193,7 +193,7 @@ router.get('/segments/:id', (req, res) => {
         contentType = 'video/mp2t';
       }
     }
-    
+
     // Set appropriate headers
     res.set({
       'Content-Type': contentType,
@@ -205,11 +205,11 @@ router.get('/segments/:id', (req, res) => {
       'X-Segment-Duration': segment.metadata.duration || 0,
       'X-Fallback-Used': fallbackUsed ? 'true' : 'false'
     });
-    
+
     // Send the segment data
     res.send(Buffer.from(segment.data));
     success = true;
-    
+
     const responseTime = perf.now() - startTime;
     logger.debug(`Segment ${segmentId} served successfully in ${responseTime.toFixed(2)}ms${fallbackUsed ? ' (with fallback)' : ''}`);
   } catch (error) {

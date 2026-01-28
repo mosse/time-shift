@@ -92,29 +92,29 @@ router.get('/segments', (req, res) => {
  * @desc    Generate a playlist for time-shifted content
  * @access  Public
  */
-router.get('/playlist', (req, res) => {
+router.get('/playlist', async (req, res) => {
   try {
     const duration = parseInt(req.query.duration) || 300; // Default 5 minutes
     const format = req.query.format || 'm3u8';
     // Allow overriding the time shift for testing purposes
-    const timeshift = req.query.timeshift !== undefined ? 
+    const timeshift = req.query.timeshift !== undefined ?
       parseInt(req.query.timeshift) : undefined;
-    
+
     const playlistGenerator = req.app.get('playlistGenerator');
-    
+
     if (!playlistGenerator) {
-      return res.status(500).json({ 
-        error: 'Playlist generator not initialized' 
+      return res.status(500).json({
+        error: 'Playlist generator not initialized'
       });
     }
-    
+
     // Generate playlist
-    const playlist = playlistGenerator.generatePlaylist({
+    const playlist = await playlistGenerator.generatePlaylist({
       duration,
       baseUrl: `${req.protocol}://${req.get('host')}`,
       timeshift
     });
-    
+
     if (format === 'm3u8') {
       // Return m3u8 format
       res.set('Content-Type', 'application/vnd.apple.mpegurl');
@@ -130,40 +130,49 @@ router.get('/playlist', (req, res) => {
 });
 
 /**
- * @route   GET /api/restart
+ * @route   POST /api/restart
  * @desc    Restart the pipeline if needed
- * @access  Protected - In a production app, would require auth
+ * @access  Protected - requires API key via ADMIN_API_KEY env var
  */
-router.get('/restart', async (req, res) => {
+router.post('/restart', async (req, res) => {
   try {
+    // Require API key if one is configured
+    const adminKey = process.env.ADMIN_API_KEY;
+    if (adminKey) {
+      const provided = req.headers['x-api-key'];
+      if (provided !== adminKey) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+      }
+    }
+
     logger.info('Received request to restart pipeline');
-    
+
     // Stop the pipeline
     await serviceManager.stopPipeline();
-    
+
     // Wait a moment
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
+
     // Start the pipeline again
     const started = await serviceManager.startPipeline({ immediate: true });
-    
+
     if (started) {
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         message: 'Pipeline restarted successfully',
         status: serviceManager.getPipelineStatus()
       });
     } else {
-      res.status(500).json({ 
-        success: false, 
+      res.status(500).json({
+        success: false,
         message: 'Failed to restart pipeline'
       });
     }
   } catch (error) {
     logger.error(`Error restarting pipeline: ${error.message}`);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });

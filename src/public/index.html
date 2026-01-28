@@ -6,26 +6,21 @@
     <meta name="description" content="Time-shifted radio player that allows you to listen to radio broadcasts from 8 hours ago">
     <title>Time-Shifted Radio Player</title>
     <link rel="stylesheet" href="css/styles.css">
-    <!-- Include the HLS.js library for HLS playback in browsers -->
     <script src="js/hls.min.js"></script>
     <script src="js/player.js"></script>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Time-Shifted Radio Stream Player</h1>
+            <h1>Time-Shifted Radio</h1>
             <p class="tagline">Listen to radio broadcasts with an 8-hour delay</p>
         </header>
-        
+
         <main>
             <div class="player-container">
                 <div class="station-info">
-                    <div class="station-logo">
-                        <div class="radio-wave"></div>
-                    </div>
                     <div class="station-details">
-                        <h2 id="stationName">Delay Radio</h2>
-                        <p id="stationDescription">Streaming content with an 8-hour delay</p>
+                        <h2>Delay Radio</h2>
                     </div>
                     <div class="connection-status">
                         <span id="connectionIndicator" class="indicator"></span>
@@ -33,136 +28,15 @@
                     </div>
                 </div>
 
-                <div class="tabs" role="tablist">
-                    <div class="tab active" role="tab" aria-selected="true" aria-controls="hls-tab" tabindex="0" data-tab="hls">HLS Playlist</div>
-                    <div class="tab" role="tab" aria-selected="false" aria-controls="segments-tab" tabindex="-1" data-tab="segments">Direct Segments</div>
-                    <div class="tab" role="tab" aria-selected="false" aria-controls="status-tab" tabindex="-1" data-tab="status">Stream Status</div>
-                </div>
-                
-                <div class="tab-content active" id="hls-tab" role="tabpanel" aria-labelledby="hls-tab">
-                    <div class="video-container">
-                        <video id="video" controls aria-label="HLS video player"></video>
-                        <div id="bufferingOverlay" class="buffering-overlay" hidden>
-                            <div class="spinner"></div>
-                            <div id="bufferingText">Buffering...</div>
-                        </div>
-                    </div>
-                    
-                    <div class="player-controls">
-                        <div class="playback-controls">
-                            <button id="playButton" aria-label="Play Stream" class="play-button">
-                                <span class="play-icon"></span>
-                            </button>
-                            
-                            <div class="volume-container">
-                                <button id="muteButton" aria-label="Mute" class="mute-button">
-                                    <span class="volume-icon"></span>
-                                </button>
-                                <div class="volume-slider-container">
-                                    <input type="range" id="volumeSlider" min="0" max="100" value="100" step="1" aria-label="Volume" class="volume-slider">
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="stream-info">
-                            <div class="time-display">
-                                <span id="streamTime">00:00:00</span>
-                                <span class="time-label">Stream Time</span>
-                            </div>
-                            
-                            <div class="buffer-status">
-                                <div class="buffer-meter">
-                                    <div id="bufferFill" class="buffer-fill" style="width: 0%"></div>
-                                </div>
-                                <span class="buffer-label">Buffer: <span id="bufferAmount">0%</span></span>
-                            </div>
-                            
-                            <div class="stream-health">
-                                <div id="healthIndicator" class="health-indicator">
-                                    <div class="health-bar"></div>
-                                    <div class="health-bar"></div>
-                                    <div class="health-bar"></div>
-                                </div>
-                                <span class="health-label">Stream Health</span>
-                            </div>
-                        </div>
-                        
-                        <div class="secondary-controls">
-                            <button id="refreshButton" aria-label="Refresh Stream">Refresh Stream</button>
-                            <button id="settingsButton" aria-label="Settings" class="settings-button">
-                                <span class="settings-icon"></span>
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div class="keyboard-shortcuts" hidden>
-                        <h3>Keyboard Shortcuts</h3>
-                        <ul>
-                            <li><kbd>Space</kbd> Play/Pause</li>
-                            <li><kbd>↑</kbd> Volume Up</li>
-                            <li><kbd>↓</kbd> Volume Down</li>
-                            <li><kbd>M</kbd> Mute/Unmute</li>
-                            <li><kbd>R</kbd> Refresh Stream</li>
-                            <li><kbd>K</kbd> Show/Hide Keyboard Shortcuts</li>
-                        </ul>
-                    </div>
-                    
-                    <p>This player is streaming content with an 8-hour delay from the original broadcast using HLS.</p>
-                </div>
-                
-                <div class="tab-content" id="segments-tab" role="tabpanel" aria-labelledby="segments-tab" hidden>
-                    <audio id="audioPlayer" controls aria-label="Audio segment player"></audio>
-                    
-                    <div class="form-group">
-                        <label for="segmentType">Segment Type:</label>
-                        <select id="segmentType" aria-label="Select segment type">
-                            <option value="current">Current Time (8 hours delayed)</option>
-                            <option value="timestamp">Specific Timestamp</option>
-                            <option value="sequence">Sequence Number</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group" id="timestampGroup" hidden>
-                        <label for="timestamp">Timestamp (ISO format):</label>
-                        <input type="datetime-local" id="timestamp" step="1" aria-describedby="timestampHint">
-                        <div id="timestampHint" class="hint">Enter the timestamp for the desired audio segment</div>
-                    </div>
-                    
-                    <div class="form-group" id="sequenceGroup" hidden>
-                        <label for="sequence">Sequence Number:</label>
-                        <input type="number" id="sequence" min="0" step="1" aria-describedby="sequenceHint">
-                        <div id="sequenceHint" class="hint">Enter the sequence number of the desired audio segment</div>
-                    </div>
-                    
-                    <div class="controls">
-                        <button id="loadSegmentButton" aria-label="Load Segment">Load Segment</button>
-                        <button id="nextSegmentButton" aria-label="Next Segment">Next Segment</button>
-                    </div>
-                    
-                    <p>Direct segment access allows you to request specific audio segments from the buffer.</p>
-                </div>
-                
-                <div class="tab-content" id="status-tab" role="tabpanel" aria-labelledby="status-tab" hidden>
-                    <div class="controls">
-                        <button id="checkStatusButton" aria-label="Check Stream Status">Check Stream Status</button>
-                    </div>
-                    
-                    <div class="status" id="streamStatus">
-                        <h3>Stream Status</h3>
-                        <div id="statusContent">Click "Check Stream Status" to view the current stream information.</div>
-                    </div>
-                </div>
-                
-                <div class="status" id="status">
-                    <h3>Player Status</h3>
-                    <div id="playerStatusContent" aria-live="polite">Player ready.</div>
-                </div>
+                <audio id="audio" controls aria-label="Radio stream player"></audio>
+
+                <div id="status" class="status" aria-live="polite">Ready. Press play to start streaming.</div>
             </div>
         </main>
-        
+
         <footer>
-            <p>Time-Shifted Radio Stream &copy; <span id="currentYear"></span> | <a href="https://github.com/your-username/time-shift" target="_blank" rel="noopener">GitHub</a></p>
+            <p>Time-Shifted Radio Stream</p>
         </footer>
     </div>
 </body>
-</html> 
+</html>
