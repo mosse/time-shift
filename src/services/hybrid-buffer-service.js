@@ -365,20 +365,27 @@ class HybridBufferService extends EventEmitter {
    */
   getBufferStats() {
     const segmentCount = this.segments.length;
-    const oldestSegment = segmentCount > 0 ? this.segments.reduce((prev, curr) => 
+    const oldestSegment = segmentCount > 0 ? this.segments.reduce((prev, curr) =>
       (prev.timestamp < curr.timestamp) ? prev : curr) : null;
-    const newestSegment = segmentCount > 0 ? this.segments.reduce((prev, curr) => 
+    const newestSegment = segmentCount > 0 ? this.segments.reduce((prev, curr) =>
       (prev.timestamp > curr.timestamp) ? prev : curr) : null;
-    
+
+    const bufferTimeSpan = oldestSegment && newestSegment ?
+      newestSegment.timestamp - oldestSegment.timestamp : 0;
+
+    // Calculate buffer level as percentage of target duration
+    const bufferLevelPercent = this.bufferDuration > 0 ?
+      Math.min(100, Math.round((bufferTimeSpan / this.bufferDuration) * 100)) : 0;
+
     return {
       segmentCount,
       totalSize: this.totalSize,
       totalDuration: this.totalDuration,
-      bufferTimeSpan: oldestSegment && newestSegment ?
-        newestSegment.timestamp - oldestSegment.timestamp : 0,
-      oldestTimestamp: oldestSegment ? 
+      bufferTimeSpan,
+      bufferLevelPercent,
+      oldestTimestamp: oldestSegment ?
         oldestSegment.timestamp : null,
-      newestTimestamp: newestSegment ? 
+      newestTimestamp: newestSegment ?
         newestSegment.timestamp : null,
       bufferDuration: this.bufferDuration,
       diskStorageEnabled: this.diskStorageEnabled,
