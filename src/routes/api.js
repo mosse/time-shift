@@ -116,11 +116,21 @@ router.get('/playlist', async (req, res) => {
     });
 
     if (format === 'm3u8') {
-      // Return m3u8 format
-      res.set('Content-Type', 'application/vnd.apple.mpegurl');
+      // Return m3u8 format with no-cache headers for live streaming
+      res.set({
+        'Content-Type': 'application/vnd.apple.mpegurl',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
       res.send(playlist.m3u8Content);
     } else {
       // Return JSON format
+      res.set({
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
       res.json(playlist);
     }
   } catch (error) {
