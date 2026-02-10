@@ -175,7 +175,7 @@ async function startServer() {
   try {
     // Initialize all required services
     logger.info('Initializing services...');
-    serviceManager.initializeServices();
+    await serviceManager.initializeServices();
     
     // Start the acquisition pipeline
     logger.info('Starting acquisition pipeline...');
