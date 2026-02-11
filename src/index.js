@@ -110,7 +110,7 @@ async function performHealthCheck() {
 
 // Main function to start the server and services
 async function startServer() {
-  logger.info('Starting time-shifted radio application...');
+  logger.info('Starting encore.fm...');
   
   // Start HTTP server
   const server = app.listen(port, () => {

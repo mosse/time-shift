@@ -1,7 +1,74 @@
+// BBC Radio station definitions
+const BBC_STATIONS = {
+  bbc_6music: {
+    id: 'bbc_6music',
+    name: 'BBC Radio 6 Music',
+    shortName: '6 Music'
+  },
+  bbc_radio_one: {
+    id: 'bbc_radio_one',
+    name: 'BBC Radio 1',
+    shortName: 'Radio 1'
+  },
+  bbc_radio_two: {
+    id: 'bbc_radio_two',
+    name: 'BBC Radio 2',
+    shortName: 'Radio 2'
+  },
+  bbc_radio_three: {
+    id: 'bbc_radio_three',
+    name: 'BBC Radio 3',
+    shortName: 'Radio 3'
+  },
+  bbc_radio_fourfm: {
+    id: 'bbc_radio_fourfm',
+    name: 'BBC Radio 4',
+    shortName: 'Radio 4'
+  },
+  bbc_radio_four_extra: {
+    id: 'bbc_radio_four_extra',
+    name: 'BBC Radio 4 Extra',
+    shortName: 'Radio 4 Extra'
+  },
+  bbc_radio_five_live: {
+    id: 'bbc_radio_five_live',
+    name: 'BBC Radio 5 Live',
+    shortName: '5 Live'
+  },
+  bbc_asian_network: {
+    id: 'bbc_asian_network',
+    name: 'BBC Asian Network',
+    shortName: 'Asian Network'
+  },
+  bbc_world_service: {
+    id: 'bbc_world_service',
+    name: 'BBC World Service',
+    shortName: 'World Service'
+  }
+};
+
+// Helper to build stream URLs for a station
+const getStreamUrl = (stationId, bitrate = 320000) => ({
+  // Third-party proxy (more stable, works worldwide)
+  proxy: `https://lstn.lv/bbcradio.m3u8?station=${stationId}&bitrate=${bitrate}`,
+  // Direct Akamai (worldwide)
+  akamai: `https://as-hls-ww-live.akamaized.net/pool_81827798/live/ww/${stationId}/${stationId}.isml/${stationId}-audio=${bitrate}.m3u8`,
+  // Direct Akamai with norewind (96kbps only, but more reliable)
+  akamaiNorewind: `http://as-hls-ww-live.akamaized.net/pool_81827798/live/ww/${stationId}/${stationId}.isml/${stationId}-audio%3d96000.norewind.m3u8`
+});
+
+// Default station
+const DEFAULT_STATION = 'bbc_6music';
+
 module.exports = {
-  // Stream URLs - BBC 6 Music streams
+  // Available BBC Radio stations
+  BBC_STATIONS,
+  DEFAULT_STATION,
+  getStreamUrl,
+
+  // Stream URLs - BBC 6 Music streams (legacy, for backwards compatibility)
   STREAM_URLS: {
-    AKAMAI: 'http://as-hls-ww-live.akamaized.net/pool_81827798/live/ww/bbc_6music/bbc_6music.isml/bbc_6music-audio%3d96000.norewind.m3u8',
+    AKAMAI: getStreamUrl(DEFAULT_STATION).akamaiNorewind,
     CLOUDFRONT: 'http://as-hls-ww.live.cf.md.bbci.co.uk/pool_81827798/live/ww/bbc_6music/bbc_6music.isml/bbc_6music-audio%3d96000.norewind.m3u8'
   },
   

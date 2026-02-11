@@ -78,14 +78,14 @@ router.get('/stats', (req, res) => {
  */
 router.get('/', (req, res) => {
   res.json({
-    name: 'Time-Shift Radio API',
+    name: 'encore.fm',
     version: '1.0.0',
-    description: 'API for accessing time-shifted radio streams',
+    description: 'live radio on your schedule',
     endpoints: [
       { path: '/', method: 'GET', description: 'API information' },
       { path: '/health', method: 'GET', description: 'Server health status' },
       { path: '/stats', method: 'GET', description: 'Service statistics' },
-      { path: '/stream.m3u8', method: 'GET', description: 'Time-shifted HLS playlist' },
+      { path: '/stream.m3u8', method: 'GET', description: 'HLS playlist' },
       { path: '/stream/segment/:sequenceNumber.ts', method: 'GET', description: 'HLS segment data' }
     ]
   });

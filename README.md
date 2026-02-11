@@ -1,6 +1,8 @@
-# Time-Shift Radio Stream
+# encore.fm
 
-A Node.js application for time-shifting HLS radio streams with persistent storage.
+*live radio on your schedule*
+
+A self-hosted application for time-shifting HLS radio streams. Capture live broadcasts and play them back hours later - perfect for catching morning shows on your evening commute.
 
 ## Features
 
@@ -93,7 +95,7 @@ To use your preferred HLS stream, modify the `src/config/config.js` file:
    ```bash
    npm restart
    # or if running as a service
-   sudo systemctl restart timeshift
+   sudo systemctl restart encore
    ```
 
 **Note:** The stream must be an HLS stream with an m3u8 playlist format. Other streaming formats are not currently supported.
@@ -142,7 +144,7 @@ npm run test:hybrid-buffer    # Test hybrid buffer service
 ## Project Structure
 
 ```
-time-shift/
+encore.fm/
 ├── src/
 │   ├── config/       # Configuration files
 │   ├── services/     # Service components
@@ -225,8 +227,8 @@ The system implements:
    cd ~/apps
    
    # Clone the repository
-   git clone https://github.com/mosse/time-shift.git
-   cd time-shift
+   git clone https://github.com/mosse/encore.fm.git
+   cd encore.fm
    
    # Install dependencies
    npm install --production
@@ -253,45 +255,45 @@ The system implements:
 5. **Set Up Systemd Service for Auto-start**
    ```bash
    # Create service file
-   sudo bash -c 'cat > /etc/systemd/system/timeshift.service << EOF
+   sudo bash -c 'cat > /etc/systemd/system/encore.service << EOF
    [Unit]
-   Description=Time-Shift Radio Service
+   Description=encore.fm Radio Service
    After=network.target
-   
+
    [Service]
    Type=simple
    User=pi
-   WorkingDirectory=/home/pi/apps/time-shift
+   WorkingDirectory=/home/pi/apps/encore.fm
    ExecStart=/usr/bin/node src/index.js
    Restart=always
    RestartSec=10
    StandardOutput=syslog
    StandardError=syslog
-   SyslogIdentifier=timeshift
+   SyslogIdentifier=encore
    Environment=NODE_ENV=production
-   
+
    [Install]
    WantedBy=multi-user.target
    EOF'
-   
+
    # Enable and start the service
-   sudo systemctl enable timeshift
-   sudo systemctl start timeshift
+   sudo systemctl enable encore
+   sudo systemctl start encore
    ```
 
 6. **Monitor the Service**
    ```bash
    # Check service status
-   sudo systemctl status timeshift
-   
+   sudo systemctl status encore
+
    # View logs
-   sudo journalctl -u timeshift -f
+   sudo journalctl -u encore -f
    ```
 
 7. **Set Up Storage Management (Optional)**
    ```bash
    # Create a daily cron job to clean up old log files
-   (crontab -l 2>/dev/null; echo "0 0 * * * find /home/pi/apps/time-shift/logs -name \"*.log.\" -mtime +7 -delete") | crontab -
+   (crontab -l 2>/dev/null; echo "0 0 * * * find /home/pi/apps/encore.fm/logs -name \"*.log.\" -mtime +7 -delete") | crontab -
    ```
 
 8. **Access the Web Interface**
@@ -314,7 +316,7 @@ The system implements:
    
    **Why change it for this application?**
    
-   - The time-shift buffer service keeps metadata indices in memory for performance
+   - The encore.fm buffer service keeps metadata indices in memory for performance
    - SD cards have much slower read/write speeds than RAM
    - Excessive swapping causes significant performance degradation on Raspberry Pi
    - Lower swappiness reduces I/O operations on the SD card, extending card lifespan
@@ -325,7 +327,7 @@ The system implements:
 2. **Optimize file system for SD card longevity**
    ```bash
    # Add to /etc/fstab
-   sudo bash -c 'echo "tmpfs /home/pi/apps/time-shift/logs tmpfs defaults,noatime,size=100M 0 0" >> /etc/fstab'
+   sudo bash -c 'echo "tmpfs /home/pi/apps/encore.fm/logs tmpfs defaults,noatime,size=100M 0 0" >> /etc/fstab'
    sudo mount -a
    ```
 
@@ -344,7 +346,7 @@ If the service fails to start or crashes:
 
 1. Check the logs:
    ```bash
-   sudo journalctl -u timeshift -e
+   sudo journalctl -u encore -e
    ```
 
 2. Verify disk space:
@@ -359,11 +361,11 @@ If the service fails to start or crashes:
 
 4. Manual restart:
    ```bash
-   sudo systemctl restart timeshift
+   sudo systemctl restart encore
    ```
 
 5. Test the application manually:
    ```bash
-   cd ~/apps/time-shift
+   cd ~/apps/encore.fm
    node src/index.js
    ``` 

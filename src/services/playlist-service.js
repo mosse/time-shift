@@ -20,7 +20,7 @@ async function fetchPlaylist(url = config.STREAM_URLS.AKAMAI, maxRetries = 3, re
         timeout: 10000,
         headers: {
           'Accept': 'application/vnd.apple.mpegurl',
-          'User-Agent': 'time-shift-radio/1.0.0'
+          'User-Agent': 'encore.fm/1.0.0'
         }
       });
       

@@ -1,5 +1,5 @@
 /**
- * Time-Shifted Radio Player
+ * encore.fm player
  * Minimal HLS audio player with reconnection logic.
  */
 document.addEventListener('DOMContentLoaded', function() {
