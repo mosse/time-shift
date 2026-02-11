@@ -15,7 +15,27 @@ document.addEventListener('DOMContentLoaded', function() {
     const progressBar = document.getElementById('progressBar');
     const bufferStatus = document.getElementById('bufferStatus');
 
+    // Track info elements
+    const trackInfo = document.getElementById('trackInfo');
+    const trackArt = document.getElementById('trackArt');
+    const trackTitle = document.getElementById('trackTitle');
+    const trackArtist = document.getElementById('trackArtist');
+
+    // Station elements
+    const stationLogo = document.getElementById('stationLogo');
+    const stationName = document.getElementById('stationName');
+
+    // Show elements
+    const showInfo = document.getElementById('showInfo');
+    const showArt = document.getElementById('showArt');
+    const showTitle = document.getElementById('showTitle');
+    const showSubtitle = document.getElementById('showSubtitle');
+    const showSynopsis = document.getElementById('showSynopsis');
+
     const streamUrl = '/api/playlist';
+    let metadataPollTimer = null;
+    let currentTrackId = null;
+    let currentShowId = null;
     let hls = null;
     let reconnectTimer = null;
     let reconnectAttempts = 0;
@@ -239,6 +259,8 @@ document.addEventListener('DOMContentLoaded', function() {
         playerContainer.style.display = 'block';
         bufferReady = true;
         initPlayer();
+        // Start fetching track metadata
+        startMetadataPolling();
     }
 
     function showWaiting() {
@@ -275,4 +297,184 @@ document.addEventListener('DOMContentLoaded', function() {
     // Check buffer status on load and poll every 30 seconds
     checkBufferStatus();
     statusPollTimer = setInterval(checkBufferStatus, 30000);
+
+    /**
+     * Fetch and display current track metadata
+     * Errors are silently handled - metadata is non-critical
+     */
+    async function fetchMetadata() {
+        try {
+            const response = await fetch('/metadata/current');
+            const data = await response.json();
+
+            // Update station info (usually static)
+            if (data.station) {
+                updateStationDisplay(data.station);
+            }
+
+            // Update show info
+            if (data.show) {
+                if (data.show.id !== currentShowId) {
+                    currentShowId = data.show.id;
+                    updateShowDisplay(data.show);
+                }
+            } else {
+                showDefaultShowInfo();
+            }
+
+            // Update track info
+            if (data.track && data.track.title) {
+                if (data.track.id !== currentTrackId) {
+                    currentTrackId = data.track.id;
+                    updateTrackDisplay(data.track);
+                }
+            } else {
+                if (currentTrackId !== 'waiting') {
+                    currentTrackId = 'waiting';
+                    showWaitingForTrack();
+                }
+            }
+        } catch (error) {
+            // Silently fail - metadata is non-critical
+            console.debug('Metadata fetch failed:', error.message);
+            if (currentTrackId !== 'waiting') {
+                currentTrackId = 'waiting';
+                showWaitingForTrack();
+            }
+        }
+    }
+
+    /**
+     * Update station display
+     */
+    function updateStationDisplay(station) {
+        if (station.name && stationName) {
+            stationName.textContent = station.name;
+        }
+        if (station.logoUrl && stationLogo) {
+            stationLogo.src = station.logoUrl;
+        }
+    }
+
+    /**
+     * Update show/programme display
+     */
+    function updateShowDisplay(show) {
+        // Update show title
+        if (showTitle) {
+            showTitle.textContent = show.title || 'BBC Radio 6 Music';
+        }
+
+        // Update subtitle (prefer presenter if available)
+        if (showSubtitle) {
+            const subtitle = show.presenter || show.subtitle || '';
+            showSubtitle.textContent = subtitle;
+        }
+
+        // Update synopsis
+        if (showSynopsis) {
+            showSynopsis.textContent = show.synopsis || '';
+        }
+
+        // Update show artwork
+        if (showArt && showInfo) {
+            if (show.imageUrl) {
+                showArt.src = show.imageUrl;
+                showArt.classList.remove('hidden');
+                showInfo.classList.remove('no-art');
+                showArt.onerror = function() {
+                    this.classList.add('hidden');
+                    showInfo.classList.add('no-art');
+                };
+            } else {
+                showArt.src = '';
+                showArt.classList.add('hidden');
+                showInfo.classList.add('no-art');
+            }
+        }
+    }
+
+    /**
+     * Show default show info when no show data available
+     */
+    function showDefaultShowInfo() {
+        if (showTitle) {
+            showTitle.textContent = 'BBC Radio 6 Music';
+        }
+        if (showSubtitle) {
+            showSubtitle.textContent = '8 hours delayed';
+        }
+        if (showSynopsis) {
+            showSynopsis.textContent = '';
+        }
+        if (showArt && showInfo) {
+            showArt.src = '';
+            showArt.classList.add('hidden');
+            showInfo.classList.add('no-art');
+        }
+    }
+
+    /**
+     * Update the track display with new metadata
+     */
+    function updateTrackDisplay(track) {
+        // Remove loading/no-art states
+        trackInfo.classList.remove('loading', 'no-art');
+
+        // Update title (track name)
+        trackTitle.textContent = track.title || 'Unknown Track';
+
+        // Update artist
+        trackArtist.textContent = track.artist || 'Unknown Artist';
+
+        // Update album art
+        if (track.imageUrl) {
+            trackArt.src = track.imageUrl;
+            trackArt.classList.remove('hidden');
+            trackArt.onerror = function() {
+                // Hide on load error
+                this.classList.add('hidden');
+                trackInfo.classList.add('no-art');
+            };
+        } else {
+            trackArt.src = '';
+            trackArt.classList.add('hidden');
+            trackInfo.classList.add('no-art');
+        }
+    }
+
+    /**
+     * Show waiting state when no track info is available yet
+     */
+    function showWaitingForTrack() {
+        trackInfo.classList.add('loading', 'no-art');
+        trackTitle.textContent = 'Now Playing';
+        trackArtist.textContent = 'Waiting for track info...';
+        trackArt.src = '';
+        trackArt.classList.add('hidden');
+    }
+
+    /**
+     * Start polling for metadata
+     */
+    function startMetadataPolling() {
+        // Show initial loading state
+        showWaitingForTrack();
+        // Initial fetch after short delay
+        setTimeout(fetchMetadata, 500);
+        // Poll every 30 seconds
+        if (!metadataPollTimer) {
+            metadataPollTimer = setInterval(fetchMetadata, 30000);
+        }
+    }
+
+    /**
+     * Stop metadata polling
+     */
+    function stopMetadataPolling() {
+        if (metadataPollTimer) {
+            clearInterval(metadataPollTimer);
+            metadataPollTimer = null;
+        }
+    }
 });

@@ -729,82 +729,125 @@ class HybridBufferService extends EventEmitter {
   
   /**
    * Load buffer metadata from disk
+   * Scans all segment files on disk and rebuilds the buffer
    * @private
    */
   async _loadMetadataFromDisk() {
     if (!this.diskStorageEnabled) {
       return;
     }
-    
+
     try {
-      const metadata = await diskStorageService.readMetadata();
-      
-      if (!metadata || !metadata.segments) {
-        logger.info('No buffer metadata found on disk');
+      // Get all segment files from disk
+      const segmentIds = await diskStorageService.listSegments();
+
+      if (segmentIds.length === 0) {
+        logger.info('No segments found on disk');
         return;
       }
-      
-      logger.info(`Loading buffer metadata from disk: ${metadata.segments.length} segments`);
-      
+
+      logger.info(`Found ${segmentIds.length} segment files on disk, rebuilding buffer...`);
+
       // Reset in-memory state
       this.segments = [];
       this.segmentsByTimestamp.clear();
       this.segmentsBySequence.clear();
       this.totalSize = 0;
       this.totalDuration = 0;
-      
-      // Check each segment exists on disk before adding to buffer
-      for (const segment of metadata.segments) {
-        // Handle both old and new metadata formats
-        const segmentId = segment.metadata?.segmentId || segment.metadata?.url?.split('/').pop()?.split('?')[0];
-        const sequenceNumber = segment.metadata?.sequenceNumber;
-        const duration = segment.metadata?.duration || 0;
-        const timestamp = segment.timestamp || Date.now();
-        
-        // Only add if we have a valid segment ID and the segment exists on disk
-        if (segmentId) {
-          const exists = await diskStorageService.segmentExists(segmentId);
-          
-          if (exists) {
-            // Create a clean segment object with all required fields
-            const cleanSegment = {
-              timestamp,
-              metadata: {
-                ...segment.metadata,
-                segmentId,
-                sequenceNumber: sequenceNumber || 0,
-                duration: duration || 0,
-                addedAt: segment.metadata?.addedAt || new Date(timestamp).toISOString()
-              },
-              size: segment.size || 0,
-              storedOnDisk: true,
-              filePath: segment.filePath
-            };
-            
-            // Add to in-memory indexes
-            this.segments.push(cleanSegment);
-            this.segmentsByTimestamp.set(cleanSegment.timestamp, cleanSegment);
-            
-            if (cleanSegment.metadata.sequenceNumber !== undefined) {
-              this.segmentsBySequence.set(cleanSegment.metadata.sequenceNumber, cleanSegment);
-            }
-            
-            // Update stats
-            this.totalSize += cleanSegment.size;
-            this.totalDuration += cleanSegment.metadata.duration;
-          } else {
-            logger.warn(`Segment ${segmentId} referenced in metadata not found on disk`);
-          }
-        } else {
-          logger.warn('Segment in metadata missing required segmentId');
+
+      // Load existing metadata for additional info (like duration)
+      const metadata = await diskStorageService.readMetadata();
+      const metadataMap = new Map();
+      if (metadata?.segments) {
+        for (const seg of metadata.segments) {
+          const id = seg.metadata?.segmentId;
+          if (id) metadataMap.set(id, seg);
         }
       }
-      
-      logger.info(`Restored ${this.segments.length} segments from disk metadata`);
-      
-      // Immediately prune any segments that are now outside the buffer window
-      await this._pruneOldSegments();
-      
+
+      // Parse sequence numbers and sort
+      const segmentsWithSeq = segmentIds
+        .map(id => ({
+          segmentId: id,
+          sequenceNumber: parseInt(id, 10)
+        }))
+        .filter(s => !isNaN(s.sequenceNumber))
+        .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+
+      if (segmentsWithSeq.length === 0) {
+        logger.warn('No valid segment files found on disk');
+        return;
+      }
+
+      // Default segment duration (will be updated from metadata if available)
+      const defaultDuration = 6.4; // seconds, typical HLS segment length
+
+      // Calculate timestamps based on sequence numbers
+      // Newest segment gets current time, older segments get earlier timestamps
+      const now = Date.now();
+      const newestSeq = segmentsWithSeq[segmentsWithSeq.length - 1].sequenceNumber;
+
+      for (const { segmentId, sequenceNumber } of segmentsWithSeq) {
+        // Check if we have metadata for this segment
+        const existingMeta = metadataMap.get(segmentId);
+        const duration = existingMeta?.metadata?.duration || defaultDuration;
+
+        // Calculate timestamp: each segment earlier in sequence is ~duration seconds older
+        const seqDiff = newestSeq - sequenceNumber;
+        const timestamp = now - (seqDiff * duration * 1000);
+
+        // Skip if segment would be outside buffer window
+        if (now - timestamp > this.bufferDuration) {
+          continue;
+        }
+
+        // Get file size from disk
+        let size = existingMeta?.size || 0;
+        if (!size) {
+          try {
+            const fs = require('fs').promises;
+            const filePath = path.join(diskStorageService.segmentsPath, `${segmentId}.ts`);
+            const stats = await fs.stat(filePath);
+            size = stats.size;
+          } catch (e) {
+            size = 0;
+          }
+        }
+
+        // Create segment object
+        const cleanSegment = {
+          timestamp,
+          metadata: {
+            url: existingMeta?.metadata?.url || `segment://${segmentId}`,
+            sequenceNumber,
+            duration,
+            segmentId,
+            addedAt: new Date(timestamp).toISOString()
+          },
+          size,
+          storedOnDisk: true,
+          filePath: path.join(diskStorageService.segmentsPath, `${segmentId}.ts`)
+        };
+
+        // Add to in-memory indexes
+        this.segments.push(cleanSegment);
+        this.segmentsByTimestamp.set(cleanSegment.timestamp, cleanSegment);
+        this.segmentsBySequence.set(sequenceNumber, cleanSegment);
+
+        // Update stats
+        this.totalSize += cleanSegment.size;
+        this.totalDuration += cleanSegment.metadata.duration;
+      }
+
+      // Sort segments by timestamp
+      this.segments.sort((a, b) => a.timestamp - b.timestamp);
+
+      const bufferSpanHours = (this.totalDuration / 3600).toFixed(2);
+      logger.info(`Restored ${this.segments.length} segments from disk (${bufferSpanHours} hours of audio)`);
+
+      // Save the rebuilt metadata
+      await this._saveMetadataToDisk();
+
     } catch (error) {
       logger.error(`Failed to load buffer metadata from disk: ${error.message}`);
     }

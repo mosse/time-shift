@@ -1,6 +1,7 @@
 const express = require('express');
 const { serviceManager } = require('../services');
 const { hybridBufferService } = require('../services/hybrid-buffer-service');
+const { metadataService } = require('../services/metadata-service');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -86,9 +87,63 @@ router.get('/', (req, res) => {
       { path: '/health', method: 'GET', description: 'Server health status' },
       { path: '/stats', method: 'GET', description: 'Service statistics' },
       { path: '/stream.m3u8', method: 'GET', description: 'HLS playlist' },
-      { path: '/stream/segment/:sequenceNumber.ts', method: 'GET', description: 'HLS segment data' }
+      { path: '/stream/segment/:sequenceNumber.ts', method: 'GET', description: 'HLS segment data' },
+      { path: '/metadata/current', method: 'GET', description: 'Current track metadata' }
     ]
   });
+});
+
+/**
+ * Current track metadata endpoint
+ * Returns metadata for the track currently being played (8 hours delayed)
+ * Also includes show/DJ info and station info
+ */
+router.get('/metadata/current', (req, res) => {
+  try {
+    // Get the current playback time (8 hours ago)
+    const bufferStats = hybridBufferService.getBufferStats();
+    const playbackTime = bufferStats.oldestTimestamp || (Date.now() - 28800000);
+
+    // Get metadata for that time
+    const track = metadataService.getMetadataAt(playbackTime);
+    const show = metadataService.getShowAt(playbackTime);
+    const station = metadataService.getStationInfo();
+
+    res.json({
+      status: 'ok',
+      playbackTime: new Date(playbackTime).toISOString(),
+      station,
+      show,
+      track
+    });
+  } catch (error) {
+    // Never fail the response - metadata is non-critical
+    logger.warn(`Metadata endpoint error: ${error.message}`);
+    res.json({
+      status: 'ok',
+      station: metadataService.getStationInfo(),
+      show: null,
+      track: null,
+      message: 'Metadata temporarily unavailable'
+    });
+  }
+});
+
+/**
+ * Metadata service stats endpoint
+ */
+router.get('/metadata/stats', (req, res) => {
+  try {
+    res.json({
+      status: 'ok',
+      ...metadataService.getStats()
+    });
+  } catch (error) {
+    res.json({
+      status: 'ok',
+      message: 'Metadata stats unavailable'
+    });
+  }
 });
 
 module.exports = router; 

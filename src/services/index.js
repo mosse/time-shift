@@ -6,6 +6,7 @@
 const { monitorService } = require('./monitor-service');
 const { downloaderService } = require('./downloader-service');
 const { hybridBufferService } = require('./hybrid-buffer-service');
+const { metadataService } = require('./metadata-service');
 const logger = require('../utils/logger');
 const config = require('../config/config');
 
@@ -172,7 +173,10 @@ class ServiceManager {
       
       this.isRunning = true;
       logger.info('Acquisition pipeline started successfully');
-      
+
+      // Start metadata service independently (non-blocking, errors don't affect pipeline)
+      this._startMetadataService();
+
       return true;
     } catch (error) {
       logger.error(`Failed to start acquisition pipeline: ${error.message}`);
@@ -201,6 +205,13 @@ class ServiceManager {
       
       // Stop the monitor
       monitorService.stopMonitoring();
+
+      // Stop metadata service (non-critical)
+      try {
+        metadataService.stop();
+      } catch (e) {
+        logger.warn(`Error stopping metadata service: ${e.message}`);
+      }
       
       // Remove event listeners to prevent memory leaks
       monitorService.removeAllListeners('newSegment');
@@ -219,15 +230,41 @@ class ServiceManager {
   }
   
   /**
+   * Start metadata service independently
+   * Failures here should never impact the main pipeline
+   * @private
+   */
+  async _startMetadataService() {
+    try {
+      // Load any existing metadata from disk
+      await metadataService.loadFromDisk();
+      // Start polling
+      metadataService.start();
+      logger.info('Metadata service started');
+    } catch (error) {
+      // Log but don't throw - metadata is non-critical
+      logger.warn(`Failed to start metadata service: ${error.message}`);
+    }
+  }
+
+  /**
    * Get current pipeline status
    * @returns {Object} - Status information for all services
    */
   getPipelineStatus() {
+    let metadataStats = null;
+    try {
+      metadataStats = metadataService.getStats();
+    } catch (e) {
+      // Ignore metadata errors
+    }
+
     return {
       isRunning: this.isRunning,
       monitor: monitorService.getStatus(),
       downloader: downloaderService.getStats(),
-      buffer: hybridBufferService.getBufferStats() // Use the non-deprecated method
+      buffer: hybridBufferService.getBufferStats(),
+      metadata: metadataStats
     };
   }
   

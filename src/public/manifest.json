@@ -4,8 +4,8 @@
   "description": "live radio on your schedule",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f8f9fa",
-  "theme_color": "#3498db",
+  "background_color": "#667eea",
+  "theme_color": "#667eea",
   "orientation": "portrait-primary",
   "categories": ["entertainment", "music"],
   "icons": [

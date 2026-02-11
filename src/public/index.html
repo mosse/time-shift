@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="encore.fm - live radio on your schedule">
-    <meta name="theme-color" content="#3498db">
+    <meta name="theme-color" content="#667eea">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="encore.fm">
@@ -37,19 +37,43 @@
             </div>
 
             <div id="playerContainer" class="player-container" style="display: none;">
-                <div class="station-info">
+                <div class="station-header">
+                    <img id="stationLogo" class="station-logo-img" src="https://sounds.files.bbci.co.uk/3.9.4/networks/bbc_6music/colour_default.svg" alt="BBC Radio 6 Music">
                     <div class="station-details">
-                        <h2>Delay Radio</h2>
+                        <p id="stationName" class="station-name">BBC Radio 6 Music</p>
+                        <p class="station-delay">8 hours delayed</p>
                     </div>
-                    <div class="connection-status">
-                        <span id="connectionIndicator" class="indicator"></span>
-                        <span id="connectionStatus">Idle</span>
+                </div>
+
+                <div id="showInfo" class="show-info">
+                    <img id="showArt" class="show-art" src="" alt="Programme artwork">
+                    <div class="show-details">
+                        <p id="showTitle" class="show-title">Loading...</p>
+                        <p id="showSubtitle" class="show-subtitle"></p>
+                        <p id="showSynopsis" class="show-synopsis"></p>
+                    </div>
+                </div>
+
+                <div id="trackInfo" class="track-info">
+                    <div class="now-playing-label">Now Playing</div>
+                    <div class="track-content">
+                        <img id="trackArt" class="track-art" src="" alt="Album art">
+                        <div class="track-details">
+                            <p id="trackTitle" class="track-title">Waiting for track info...</p>
+                            <p id="trackArtist" class="track-artist"></p>
+                        </div>
                     </div>
                 </div>
 
                 <audio id="audio" controls aria-label="Radio stream player"></audio>
 
-                <div id="status" class="status" aria-live="polite">Ready. Press play to start streaming.</div>
+                <div class="player-footer">
+                    <div id="status" class="status" aria-live="polite">Ready. Press play to start streaming.</div>
+                    <div class="connection-status">
+                        <span id="connectionIndicator" class="indicator"></span>
+                        <span id="connectionStatus">Idle</span>
+                    </div>
+                </div>
             </div>
         </main>
 
