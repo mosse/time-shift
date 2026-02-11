@@ -8,11 +8,24 @@ document.addEventListener('DOMContentLoaded', function() {
     const connectionStatus = document.getElementById('connectionStatus');
     const connectionIndicator = document.getElementById('connectionIndicator');
 
+    // Buffer status elements
+    const waitingContainer = document.getElementById('waitingContainer');
+    const playerContainer = document.getElementById('playerContainer');
+    const countdownTime = document.getElementById('countdownTime');
+    const progressBar = document.getElementById('progressBar');
+    const bufferStatus = document.getElementById('bufferStatus');
+
     const streamUrl = '/api/playlist';
     let hls = null;
     let reconnectTimer = null;
     let reconnectAttempts = 0;
     const maxReconnectAttempts = 5;
+    let statusPollTimer = null;
+    let countdownTimer = null;
+    let bufferReady = false;
+    let secondsRemaining = 0;
+    let currentBufferSecs = 0;
+    let requiredBufferSecs = 0;
 
     const hlsConfig = {
         debug: false,
@@ -183,6 +196,83 @@ document.addEventListener('DOMContentLoaded', function() {
         audio.removeEventListener('play', onFirstPlay);
     });
 
-    // Initialize immediately so the stream is ready when the user clicks play
-    initPlayer();
+    function formatTime(seconds) {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        return String(hours).padStart(2, '0') + ':' +
+               String(minutes).padStart(2, '0') + ':' +
+               String(secs).padStart(2, '0');
+    }
+
+    function updateCountdownDisplay() {
+        const percent = Math.min(100, (currentBufferSecs / requiredBufferSecs) * 100);
+        countdownTime.textContent = formatTime(secondsRemaining);
+        progressBar.style.width = percent.toFixed(1) + '%';
+        bufferStatus.textContent = formatTime(currentBufferSecs) + ' of ' + formatTime(requiredBufferSecs) + ' buffered (' + percent.toFixed(1) + '%)';
+    }
+
+    function tickCountdown() {
+        if (secondsRemaining > 0) {
+            secondsRemaining--;
+            currentBufferSecs++;
+            updateCountdownDisplay();
+        }
+        if (secondsRemaining <= 0 && !bufferReady) {
+            checkBufferStatus();
+        }
+    }
+
+    function updateBufferUI(data) {
+        currentBufferSecs = data.currentBufferSeconds;
+        requiredBufferSecs = data.requiredBufferSeconds;
+        secondsRemaining = data.secondsUntilReady;
+        updateCountdownDisplay();
+    }
+
+    function showPlayer() {
+        if (countdownTimer) {
+            clearInterval(countdownTimer);
+            countdownTimer = null;
+        }
+        waitingContainer.style.display = 'none';
+        playerContainer.style.display = 'block';
+        bufferReady = true;
+        initPlayer();
+    }
+
+    function showWaiting() {
+        waitingContainer.style.display = 'block';
+        playerContainer.style.display = 'none';
+        if (!countdownTimer) {
+            countdownTimer = setInterval(tickCountdown, 1000);
+        }
+    }
+
+    async function checkBufferStatus() {
+        try {
+            const response = await fetch('/api/status');
+            const data = await response.json();
+
+            if (data.bufferReady) {
+                updateBufferUI(data.bufferReady);
+
+                if (data.bufferReady.ready) {
+                    if (statusPollTimer) {
+                        clearInterval(statusPollTimer);
+                        statusPollTimer = null;
+                    }
+                    showPlayer();
+                } else {
+                    showWaiting();
+                }
+            }
+        } catch (error) {
+            bufferStatus.textContent = 'Error checking buffer status';
+        }
+    }
+
+    // Check buffer status on load and poll every 30 seconds
+    checkBufferStatus();
+    statusPollTimer = setInterval(checkBufferStatus, 30000);
 });

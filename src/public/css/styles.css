@@ -123,6 +123,68 @@ audio {
   border-left-color: #f39c12;
 }
 
+/* Waiting Container */
+.waiting-container {
+  background-color: #fff;
+  border-radius: 12px;
+  padding: 40px 25px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  margin-bottom: 30px;
+  text-align: center;
+}
+
+.waiting-container h2 {
+  color: #2c3e50;
+  margin: 20px 0 10px;
+  font-size: 1.4rem;
+}
+
+.waiting-description {
+  color: #7f8c8d;
+  margin-bottom: 25px;
+}
+
+.countdown {
+  margin: 25px 0;
+}
+
+#countdownTime {
+  font-size: 2.5rem;
+  font-weight: 600;
+  color: #2c3e50;
+  font-variant-numeric: tabular-nums;
+  display: block;
+}
+
+.countdown-label {
+  font-size: 0.9rem;
+  color: #7f8c8d;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.progress-container {
+  background-color: #ecf0f1;
+  border-radius: 10px;
+  height: 8px;
+  overflow: hidden;
+  margin: 20px 0;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #3498db, #2ecc71);
+  border-radius: 10px;
+  width: 0%;
+  transition: width 0.5s ease;
+}
+
+.buffer-status {
+  font-size: 0.85rem;
+  color: #95a5a6;
+  margin: 0;
+}
+
 /* Footer */
 footer {
   text-align: center;

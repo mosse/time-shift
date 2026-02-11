@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const { serviceManager } = require('../services');
 const logger = require('../utils/logger');
+const config = require('../config/config');
 
 /**
  * @route   GET /api/health
@@ -39,15 +40,35 @@ router.get('/status', (req, res) => {
   try {
     // Get pipeline status
     const status = serviceManager.getPipelineStatus();
-    
+
     // Get logger metrics
     const logMetrics = logger.getMetrics();
-    
+
+    // Calculate buffer readiness
+    const requiredBufferMs = config.DELAY_DURATION;
+    const requiredBufferSeconds = Math.floor(requiredBufferMs / 1000);
+
+    // Calculate current buffer time span from oldest to newest segment
+    let currentBufferMs = 0;
+    if (status.buffer && status.buffer.oldestTimestamp && status.buffer.newestTimestamp) {
+      currentBufferMs = status.buffer.newestTimestamp - status.buffer.oldestTimestamp;
+    }
+    const currentBufferSeconds = Math.floor(currentBufferMs / 1000);
+
+    const ready = currentBufferMs >= requiredBufferMs;
+    const secondsUntilReady = ready ? 0 : Math.max(0, requiredBufferSeconds - currentBufferSeconds);
+
     // Send combined status
     res.json({
       timestamp: Date.now(),
       uptime: logMetrics.uptime,
       uptimeHuman: logMetrics.uptimeHuman,
+      bufferReady: {
+        ready,
+        currentBufferSeconds,
+        requiredBufferSeconds,
+        secondsUntilReady
+      },
       pipeline: status,
       logs: {
         errors: logMetrics.errors,

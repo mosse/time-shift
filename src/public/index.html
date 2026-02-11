@@ -17,7 +17,20 @@
         </header>
 
         <main>
-            <div class="player-container">
+            <div id="waitingContainer" class="waiting-container">
+                <h2>Building Time Buffer</h2>
+                <p class="waiting-description">The stream requires an 8-hour buffer before playback can begin.</p>
+                <div class="countdown">
+                    <span id="countdownTime">--:--:--</span>
+                    <span class="countdown-label">until ready</span>
+                </div>
+                <div class="progress-container">
+                    <div id="progressBar" class="progress-bar"></div>
+                </div>
+                <p id="bufferStatus" class="buffer-status">Checking buffer status...</p>
+            </div>
+
+            <div id="playerContainer" class="player-container" style="display: none;">
                 <div class="station-info">
                     <div class="station-details">
                         <h2>Delay Radio</h2>
