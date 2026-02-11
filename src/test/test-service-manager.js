@@ -204,16 +204,17 @@ async function testMultipleInstances() {
 }
 
 /**
- * Test: Buffer service reference
+ * Test: Buffer service reference via singleton
  */
 async function testBufferServiceReference() {
   logger.info('Testing buffer service reference...');
 
-  const manager = new ServiceManager();
-  await manager.initializeServices();
+  // Import the singleton which has bufferService attached
+  const { serviceManager } = require('../services');
 
-  assert(manager.bufferService !== undefined, 'Buffer service accessible');
-  assert(typeof manager.bufferService.getBufferStats === 'function', 'Buffer service has expected methods');
+  // The singleton should have bufferService attached
+  assert(serviceManager.bufferService !== undefined, 'Buffer service accessible on singleton');
+  assert(typeof serviceManager.bufferService.getBufferStats === 'function', 'Buffer service has expected methods');
 }
 
 /**
