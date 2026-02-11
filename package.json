@@ -1,7 +1,7 @@
 {
   "name": "encore.fm",
   "version": "1.0.0",
-  "description": "Listen to live radio on your schedule",
+  "description": "live radio on your schedule",
   "main": "src/index.js",
   "directories": {
     "test": "test"

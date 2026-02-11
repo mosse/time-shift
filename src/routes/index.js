@@ -80,7 +80,7 @@ router.get('/', (req, res) => {
   res.json({
     name: 'encore.fm',
     version: '1.0.0',
-    description: 'Listen to live radio on your schedule',
+    description: 'live radio on your schedule',
     endpoints: [
       { path: '/', method: 'GET', description: 'API information' },
       { path: '/health', method: 'GET', description: 'Server health status' },

@@ -1,6 +1,6 @@
 # encore.fm
 
-*Listen to live radio on your schedule*
+*live radio on your schedule*
 
 A self-hosted application for time-shifting HLS radio streams. Capture live broadcasts and play them back hours later - perfect for catching morning shows on your evening commute.
 
