@@ -41,8 +41,8 @@ const logger = winston.createLogger({
     winston.format.splat(),
     winston.format.json()
   ),
-  defaultMeta: { 
-    service: 'time-shift',
+  defaultMeta: {
+    service: 'encore.fm',
     hostname: require('os').hostname(),
     pid: process.pid
   },

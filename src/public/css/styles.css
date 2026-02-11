@@ -23,11 +23,37 @@ header {
 }
 
 h1 {
-  color: #2c3e50;
-  border-bottom: 2px solid #3498db;
+  border-bottom: none;
   padding-bottom: 10px;
   display: inline-block;
   margin-bottom: 10px;
+}
+
+/* Logo typography */
+.logo {
+  font-weight: 700;
+  font-style: italic;
+  color: #2c3e50;
+  letter-spacing: -0.02em;
+}
+
+.logo-dot {
+  font-weight: 400;
+  font-style: normal;
+  color: #3498db;
+}
+
+.logo-small {
+  font-weight: 600;
+  font-style: italic;
+  color: #7f8c8d;
+  letter-spacing: -0.02em;
+}
+
+.logo-dot-small {
+  font-weight: 400;
+  font-style: normal;
+  color: #95a5a6;
 }
 
 .tagline {

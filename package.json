@@ -1,7 +1,7 @@
 {
-  "name": "time-shift",
+  "name": "encore.fm",
   "version": "1.0.0",
-  "description": "A time-shifted radio stream application",
+  "description": "Listen to live radio on your schedule",
   "main": "src/index.js",
   "directories": {
     "test": "test"
@@ -27,8 +27,9 @@
   "keywords": [
     "radio",
     "stream",
+    "hls",
     "time-shift",
-    "m3u8"
+    "encore"
   ],
   "author": "",
   "license": "ISC",
