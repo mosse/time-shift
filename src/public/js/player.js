@@ -25,7 +25,15 @@ document.addEventListener('DOMContentLoaded', function() {
         fragLoadingTimeOut: 20000,
         enableWorker: true,
         lowLatencyMode: false,
-        backBufferLength: 90
+        backBufferLength: 90,
+        // Live stream settings
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 10,
+        liveDurationInfinity: true,
+        // Keep polling for new segments
+        manifestLoadingTimeOut: 10000,
+        levelLoadingMaxRetry: 4,
+        fragLoadingMaxRetry: 6
     };
 
     function setStatus(message, type) {

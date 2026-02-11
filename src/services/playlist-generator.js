@@ -72,21 +72,42 @@ class PlaylistGenerator {
       const anchorSequence = anchorSegment.metadata.sequenceNumber;
       logger.debug(`Found anchor segment with sequence: ${anchorSequence}`);
 
-      // Calculate sequence range (anchor segment should be in the middle)
-      const startSequence = Math.max(0, anchorSequence - Math.floor(segmentCount / 2));
-      const endSequence = startSequence + segmentCount - 1;
+      // Collect segments starting from anchor and expanding outward
+      const playlistSegments = [anchorSegment];
+      let maxDuration = anchorSegment.metadata.duration || 0;
 
-      // Collect segments
-      const playlistSegments = [];
-      let maxDuration = 0;
+      // Try to get segments before and after the anchor
+      let beforeSeq = anchorSequence - 1;
+      let afterSeq = anchorSequence + 1;
 
-      for (let seq = startSequence; seq <= endSequence; seq++) {
-        const segment = await this.bufferService.getSegmentBySequence(seq);
-        if (segment) {
-          playlistSegments.push(segment);
-          maxDuration = Math.max(maxDuration, segment.metadata.duration || 0);
-        } else {
-          logger.warn(`Segment with sequence number ${seq} not found`);
+      while (playlistSegments.length < segmentCount) {
+        let foundAny = false;
+
+        // Try to get a segment after
+        if (playlistSegments.length < segmentCount) {
+          const afterSegment = await this.bufferService.getSegmentBySequence(afterSeq);
+          if (afterSegment) {
+            playlistSegments.push(afterSegment);
+            maxDuration = Math.max(maxDuration, afterSegment.metadata.duration || 0);
+            foundAny = true;
+          }
+          afterSeq++;
+        }
+
+        // Try to get a segment before
+        if (playlistSegments.length < segmentCount && beforeSeq >= 0) {
+          const beforeSegment = await this.bufferService.getSegmentBySequence(beforeSeq);
+          if (beforeSegment) {
+            playlistSegments.unshift(beforeSegment);
+            maxDuration = Math.max(maxDuration, beforeSegment.metadata.duration || 0);
+            foundAny = true;
+          }
+          beforeSeq--;
+        }
+
+        // If we couldn't find any more segments, stop looking
+        if (!foundAny) {
+          break;
         }
       }
 

@@ -33,28 +33,28 @@ class ServiceManager {
   /**
    * Initialize all services
    */
-  initializeServices() {
+  async initializeServices() {
     if (this.servicesInitialized) {
       logger.warn('Services already initialized');
       return;
     }
-    
-    // Initialize hybrid buffer service
-    hybridBufferService.initialize({
+
+    // Initialize hybrid buffer service (creates data directories)
+    await hybridBufferService.initialize({
       duration: this.options.bufferDuration
     });
-    
+
     // Initialize downloader service with custom options
     downloaderService.initialize({
       maxRetries: this.options.maxRetries,
       maxConcurrentDownloads: this.options.maxConcurrentDownloads,
       bufferService: hybridBufferService // Pass hybrid buffer service reference
     });
-    
+
     // Configure monitor service
     monitorService.url = this.options.streamUrl;
     monitorService.interval = this.options.monitorInterval;
-    
+
     this.servicesInitialized = true;
     logger.info('All services initialized');
   }
@@ -155,7 +155,7 @@ class ServiceManager {
       
       // Initialize services if needed
       if (!this.servicesInitialized) {
-        this.initializeServices();
+        await this.initializeServices();
       }
       
       // Connect services
