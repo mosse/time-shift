@@ -11,8 +11,11 @@
     "dev": "nodemon src/index.js",
     "start:prod": "NODE_ENV=production node src/index.js",
     "start:debug": "LOG_LEVEL=debug node src/index.js",
-    "test": "npm run test:playlist && npm run test:buffer && npm run test:buffer-extended && npm run test:downloader && npm run test:downloader-enhanced && npm run test:monitor && npm run test:pipeline && npm run test:disk-storage && npm run test:hybrid-buffer && npm run test:hybrid-buffer-simple && npm run test:system",
+    "test": "npm run test:logger && npm run test:buffer && npm run test:buffer-extended && npm run test:playlist && npm run test:playlist-generator && npm run test:expansion && npm run test:downloader && npm run test:downloader-enhanced && npm run test:monitor && npm run test:disk-storage && npm run test:hybrid-buffer && npm run test:hybrid-buffer-simple && npm run test:service-manager && npm run test:errors && npm run test:routes && npm run test:pipeline && npm run test:system",
+    "test:logger": "node src/test/test-logger.js",
     "test:playlist": "node src/test/test-playlist.js",
+    "test:playlist-generator": "node src/test/test-playlist-generator.js",
+    "test:expansion": "node src/test/test-playlist-expansion.js",
     "test:buffer": "node src/test/test-buffer.js",
     "test:buffer-extended": "node src/test/test-buffer-extended.js",
     "test:downloader": "node src/test/test-downloader.js",
@@ -22,6 +25,9 @@
     "test:disk-storage": "node src/test/test-disk-storage.js",
     "test:hybrid-buffer": "node src/test/test-hybrid-buffer.js",
     "test:hybrid-buffer-simple": "node src/test/test-hybrid-buffer-simple.js",
+    "test:service-manager": "node src/test/test-service-manager.js",
+    "test:errors": "node src/test/test-error-scenarios.js",
+    "test:routes": "node src/test/test-routes.js",
     "test:system": "node test/system-test.js"
   },
   "keywords": [
