@@ -331,4 +331,4 @@ Yes. BBC streams work worldwide, though some programmes may be geoblocked due to
 
 ## License
 
-ISC
+MIT
