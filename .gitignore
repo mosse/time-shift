@@ -31,5 +31,4 @@ dist/
 build/
 
 # Runtime data
-data/segments/
-data/buffer-metadata.json
+data/
