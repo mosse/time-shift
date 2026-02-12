@@ -80,6 +80,25 @@ STREAM_URL=https://example.com/stream.m3u8
 
 ## Deploy
 
+### Docker (recommended)
+
+```bash
+docker run -d \
+  --name encore-fm \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  -v encore-data:/app/data \
+  ghcr.io/mosse/encore-fm:latest
+```
+
+Or with Docker Compose:
+
+```bash
+git clone https://github.com/mosse/encore.fm
+cd encore.fm
+docker compose up -d
+```
+
 ### Node.js
 
 ```bash
@@ -139,6 +158,44 @@ Runs well on a Pi 3 or newer. See the [full Raspberry Pi guide](#raspberry-pi-de
 | `GET /api/playlist` | Time-shifted HLS playlist |
 | `GET /api/segments` | List buffered segments |
 | `POST /api/restart` | Restart acquisition pipeline |
+
+---
+
+## Sonos / Smart Speakers
+
+You can stream encore.fm to Sonos speakers using TuneIn's custom URL feature.
+
+### Add to Sonos via TuneIn
+
+1. Go to [TuneIn Custom URL](https://tunein.com/myradio/) (log in required)
+2. Click **Add Custom URL**
+3. Enter:
+   - **Station Name:** `encore.fm` (or whatever you like)
+   - **Stream URL:** `http://<your-server-ip>:3000/api/stream.m3u8`
+4. Save the station
+
+The station will appear in your Sonos app under **My Radio Stations**.
+
+### Direct URL for Other Devices
+
+For devices that support HLS streams directly:
+
+```
+http://<your-server-ip>:3000/api/stream.m3u8
+```
+
+Works with:
+- VLC
+- mpv (`mpv http://192.168.1.x:3000/api/stream.m3u8`)
+- Kodi
+- Home Assistant media players
+- Any HLS-compatible player
+
+### Network Requirements
+
+Your encore.fm server must be accessible from the device:
+- For Sonos: server and speakers must be on the same local network
+- For remote access: set up a reverse proxy with HTTPS (Sonos requires HTTPS for external URLs)
 
 ---
 
