@@ -97,7 +97,7 @@ async function testDoubleStart() {
 }
 
 /**
- * Test: getMetadataAt with tolerance
+ * Test: getMetadataAt with range-based matching
  */
 async function testGetMetadataAt() {
   logger.info('Testing MetadataService getMetadataAt...');
@@ -105,31 +105,36 @@ async function testGetMetadataAt() {
   const service = new MetadataService();
   const now = Date.now();
 
-  // Add test metadata
+  // Add test metadata with onset/end ranges (each track ~3 minutes)
   service.metadata = [
     {
-      timestamp: now - 300000, // 5 minutes ago
+      onset: now - 300000,     // Started 5 min ago
+      end: now - 120000,       // Ended 2 min ago
+      duration: 180000,        // 3 min duration
       data: { id: '1', artist: 'Artist 1', title: 'Track 1' }
     },
     {
-      timestamp: now - 600000, // 10 minutes ago
+      onset: now - 600000,     // Started 10 min ago
+      end: now - 420000,       // Ended 7 min ago
+      duration: 180000,
       data: { id: '2', artist: 'Artist 2', title: 'Track 2' }
     },
     {
-      timestamp: now - 900000, // 15 minutes ago
+      onset: now - 900000,     // Started 15 min ago
+      end: now - 720000,       // Ended 12 min ago
+      duration: 180000,
       data: { id: '3', artist: 'Artist 3', title: 'Track 3' }
     }
   ];
 
-  // Test exact match
-  const exact = service.getMetadataAt(now - 300000);
-  assert(exact !== null, 'Found metadata for exact timestamp');
-  assert(exact.id === '1', 'Correct metadata returned for exact match');
+  // Test exact range match (time falls within track's onset-end)
+  const inRange = service.getMetadataAt(now - 200000); // 3:20 ago - within Track 1's range
+  assert(inRange !== null, 'Found metadata for timestamp within range');
+  assert(inRange.id === '1', 'Correct metadata returned for range match');
 
-  // Test within tolerance (default 5 minutes)
-  const withinTolerance = service.getMetadataAt(now - 320000); // 5:20 ago
-  assert(withinTolerance !== null, 'Found metadata within tolerance');
-  assert(withinTolerance.id === '1', 'Returns closest match within tolerance');
+  // Test fallback within tolerance (between tracks)
+  const betweenTracks = service.getMetadataAt(now - 400000); // 6:40 ago - between Track 1 and 2
+  assert(betweenTracks !== null, 'Found closest metadata for gap between tracks');
 
   // Test outside tolerance
   const outsideTolerance = service.getMetadataAt(now - 1200000, 60000); // 20 min ago, 1 min tolerance
@@ -150,20 +155,26 @@ async function testGetMetadataInRange() {
   const service = new MetadataService();
   const now = Date.now();
 
+  // Each track ~100s duration
   service.metadata = [
-    { timestamp: now - 100000, data: { id: '1' } },
-    { timestamp: now - 200000, data: { id: '2' } },
-    { timestamp: now - 300000, data: { id: '3' } },
-    { timestamp: now - 400000, data: { id: '4' } },
-    { timestamp: now - 500000, data: { id: '5' } }
+    { onset: now - 100000, end: now, duration: 100000, data: { id: '1' } },
+    { onset: now - 200000, end: now - 100000, duration: 100000, data: { id: '2' } },
+    { onset: now - 300000, end: now - 200000, duration: 100000, data: { id: '3' } },
+    { onset: now - 400000, end: now - 300000, duration: 100000, data: { id: '4' } },
+    { onset: now - 500000, end: now - 400000, duration: 100000, data: { id: '5' } }
   ];
 
-  // Get range
+  // Get range - should include all tracks that overlap with the range
+  // Range: -350000 to -150000 overlaps with tracks 2, 3, 4
   const range = service.getMetadataInRange(now - 350000, now - 150000);
-  assert(range.length === 2, 'Returns correct number of entries in range');
+  assert(range.length === 3, 'Returns correct number of entries overlapping range');
 
-  // Empty range
-  const emptyRange = service.getMetadataInRange(now - 50000, now);
+  // Narrower range - should include only tracks 2 and 3
+  const narrowRange = service.getMetadataInRange(now - 250000, now - 150000);
+  assert(narrowRange.length === 2, 'Returns correct entries for narrow range');
+
+  // Empty range - no tracks overlap
+  const emptyRange = service.getMetadataInRange(now + 100000, now + 200000);
   assert(emptyRange.length === 0, 'Returns empty array for range with no entries');
 }
 
@@ -179,11 +190,11 @@ async function testGetCurrentTrack() {
   // Empty metadata
   assert(service.getCurrentTrack() === null, 'Returns null for empty metadata');
 
-  // With metadata
+  // With metadata - should return most recently started track
   service.metadata = [
-    { timestamp: now - 300000, data: { id: '1', artist: 'Old Artist' } },
-    { timestamp: now - 100000, data: { id: '2', artist: 'Current Artist' } },
-    { timestamp: now - 200000, data: { id: '3', artist: 'Middle Artist' } }
+    { onset: now - 300000, end: now - 200000, duration: 100000, data: { id: '1', artist: 'Old Artist' } },
+    { onset: now - 100000, end: now, duration: 100000, data: { id: '2', artist: 'Current Artist' } },
+    { onset: now - 200000, end: now - 100000, duration: 100000, data: { id: '3', artist: 'Middle Artist' } }
   ];
 
   const current = service.getCurrentTrack();
@@ -203,24 +214,19 @@ async function testTimePruning() {
 
   const now = Date.now();
 
-  // Add metadata with various ages
+  // Add metadata with various ages - pruning is based on track end time
   service.metadata = [
-    { timestamp: now - 60000, data: { id: '1' } },  // 1 min ago - keep
-    { timestamp: now - 120000, data: { id: '2' } }, // 2 min ago - keep
-    { timestamp: now - 360000, data: { id: '3' } }, // 6 min ago - prune
-    { timestamp: now - 600000, data: { id: '4' } }  // 10 min ago - prune
+    { onset: now - 120000, end: now - 60000, duration: 60000, data: { id: '1' } },   // Ended 1 min ago - keep
+    { onset: now - 240000, end: now - 180000, duration: 60000, data: { id: '2' } },  // Ended 3 min ago - keep
+    { onset: now - 420000, end: now - 360000, duration: 60000, data: { id: '3' } },  // Ended 6 min ago - prune
+    { onset: now - 660000, end: now - 600000, duration: 60000, data: { id: '4' } }   // Ended 10 min ago - prune
   ];
-  service.metadataByTime.set(now - 60000, service.metadata[0]);
-  service.metadataByTime.set(now - 120000, service.metadata[1]);
-  service.metadataByTime.set(now - 360000, service.metadata[2]);
-  service.metadataByTime.set(now - 600000, service.metadata[3]);
 
   // Trigger pruning
   service._pruneOldMetadata();
 
   assert(service.metadata.length === 2, 'Pruned old entries');
   assert(service.metadata.every(m => m.data.id === '1' || m.data.id === '2'), 'Kept correct entries');
-  assert(service.metadataByTime.size === 2, 'Map cleaned up');
 }
 
 /**

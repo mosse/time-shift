@@ -27,8 +27,7 @@ class MetadataService extends EventEmitter {
     };
 
     // State - track metadata
-    this.metadata = []; // Array of { timestamp, data } objects
-    this.metadataByTime = new Map(); // For quick lookups
+    this.metadata = []; // Array of { onset, end, duration, data } objects
 
     // State - show/schedule metadata
     this.shows = []; // Array of { start, end, data } objects
@@ -161,16 +160,21 @@ class MetadataService extends EventEmitter {
       if (item.segment_type !== 'music') continue;
 
       // Calculate the actual broadcast time based on offset
-      // offset.start is seconds from the start of the current program
-      const broadcastTime = now - ((item.offset?.start || 0) * 1000);
+      // offset.start is seconds since the track started playing
+      const offsetStartMs = (item.offset?.start || 0) * 1000;
+      const durationMs = ((item.offset?.end || 0) - (item.offset?.start || 0)) * 1000;
+      const onsetTime = now - offsetStartMs;
+      const endTime = onsetTime + durationMs;
 
       // Check if we already have this item (by ID)
       const existingIndex = this.metadata.findIndex(m => m.data.id === item.id);
       if (existingIndex >= 0) continue;
 
-      // Create metadata entry
+      // Create metadata entry with precise timing
       const entry = {
-        timestamp: broadcastTime,
+        onset: onsetTime,           // When track started (ms timestamp)
+        end: endTime,               // When track ends (ms timestamp)
+        duration: durationMs,       // Track duration in ms
         storedAt: now,
         data: {
           id: item.id,
@@ -178,12 +182,11 @@ class MetadataService extends EventEmitter {
           title: item.titles?.secondary || 'Unknown Track',
           imageUrl: this._formatImageUrl(item.image_url),
           isNowPlaying: item.offset?.now_playing || false,
-          duration: item.offset?.end - item.offset?.start || 0
+          duration: durationMs / 1000  // Duration in seconds for display
         }
       };
 
       this.metadata.push(entry);
-      this.metadataByTime.set(broadcastTime, entry);
       newItems++;
 
       // Emit event for new track (useful for real-time UI updates)
@@ -330,35 +333,50 @@ class MetadataService extends EventEmitter {
     const now = Date.now();
     const cutoffTime = now - this.retentionDuration;
 
-    const toRemove = this.metadata.filter(entry => entry.timestamp < cutoffTime);
-    if (toRemove.length === 0) return;
+    const beforeCount = this.metadata.length;
 
-    // Remove old entries
-    this.metadata = this.metadata.filter(entry => entry.timestamp >= cutoffTime);
+    // Remove tracks that ended before the cutoff
+    this.metadata = this.metadata.filter(entry => entry.end >= cutoffTime);
 
-    // Clean up the map
-    for (const item of toRemove) {
-      this.metadataByTime.delete(item.timestamp);
+    const removedCount = beforeCount - this.metadata.length;
+    if (removedCount > 0) {
+      logger.debug(`Pruned ${removedCount} metadata entries older than ${new Date(cutoffTime).toISOString()}`);
     }
-
-    logger.debug(`Pruned ${toRemove.length} metadata entries older than ${new Date(cutoffTime).toISOString()}`);
   }
 
   /**
-   * Get metadata for a specific timestamp (with tolerance)
+   * Get metadata for a specific timestamp using range-based matching
+   * Returns the track that was playing at the given time
    * @param {number} timestamp - The timestamp to find metadata for
-   * @param {number} tolerance - Tolerance in ms (default 5 minutes)
+   * @param {number} tolerance - Fallback tolerance in ms if no exact match (default 30s)
    * @returns {Object|null} The metadata or null if not found
    */
-  getMetadataAt(timestamp, tolerance = 300000) {
+  getMetadataAt(timestamp, tolerance = 30000) {
     if (this.metadata.length === 0) return null;
 
-    // Find the closest metadata entry
+    // First: try exact range match (timestamp falls within onset → end)
+    for (const entry of this.metadata) {
+      if (timestamp >= entry.onset && timestamp <= entry.end) {
+        return entry.data;
+      }
+    }
+
+    // Fallback: find closest track within tolerance
+    // (handles gaps between tracks, e.g., DJ talking)
     let closest = null;
     let closestDiff = Infinity;
 
     for (const entry of this.metadata) {
-      const diff = Math.abs(entry.timestamp - timestamp);
+      // Distance to this track's time range
+      let diff;
+      if (timestamp < entry.onset) {
+        diff = entry.onset - timestamp;
+      } else if (timestamp > entry.end) {
+        diff = timestamp - entry.end;
+      } else {
+        diff = 0; // Should have matched above
+      }
+
       if (diff < closestDiff && diff <= tolerance) {
         closest = entry;
         closestDiff = diff;
@@ -376,20 +394,20 @@ class MetadataService extends EventEmitter {
    */
   getMetadataInRange(startTime, endTime) {
     return this.metadata
-      .filter(entry => entry.timestamp >= startTime && entry.timestamp <= endTime)
-      .map(entry => entry.data)
-      .sort((a, b) => a.timestamp - b.timestamp);
+      .filter(entry => entry.end >= startTime && entry.onset <= endTime)
+      .map(entry => ({ ...entry.data, onset: entry.onset, end: entry.end }))
+      .sort((a, b) => a.onset - b.onset);
   }
 
   /**
-   * Get the most recently stored "now playing" track
+   * Get the most recently started track
    * @returns {Object|null} The current track or null
    */
   getCurrentTrack() {
     if (this.metadata.length === 0) return null;
 
-    // Sort by timestamp descending and return first
-    const sorted = [...this.metadata].sort((a, b) => b.timestamp - a.timestamp);
+    // Sort by onset descending and return most recent
+    const sorted = [...this.metadata].sort((a, b) => b.onset - a.onset);
     return sorted[0]?.data || null;
   }
 
@@ -405,10 +423,10 @@ class MetadataService extends EventEmitter {
       successCount: this.successCount,
       errorCount: this.errorCount,
       oldestEntry: this.metadata.length > 0
-        ? Math.min(...this.metadata.map(m => m.timestamp))
+        ? Math.min(...this.metadata.map(m => m.onset))
         : null,
       newestEntry: this.metadata.length > 0
-        ? Math.max(...this.metadata.map(m => m.timestamp))
+        ? Math.max(...this.metadata.map(m => m.onset))
         : null
     };
   }
@@ -451,13 +469,21 @@ class MetadataService extends EventEmitter {
       const parsed = JSON.parse(data);
 
       if (parsed.entries && Array.isArray(parsed.entries)) {
-        this.metadata = parsed.entries;
-
-        // Rebuild the map
-        this.metadataByTime.clear();
-        for (const entry of this.metadata) {
-          this.metadataByTime.set(entry.timestamp, entry);
-        }
+        // Migrate old format (timestamp) to new format (onset/end)
+        this.metadata = parsed.entries.map(entry => {
+          if (entry.onset !== undefined) {
+            return entry; // Already new format
+          }
+          // Convert old format
+          const duration = (entry.data?.duration || 180) * 1000; // Default 3 min
+          return {
+            onset: entry.timestamp,
+            end: entry.timestamp + duration,
+            duration: duration,
+            storedAt: entry.storedAt,
+            data: entry.data
+          };
+        });
 
         logger.info(`Loaded ${this.metadata.length} metadata entries from disk`);
       }
