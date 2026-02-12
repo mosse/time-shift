@@ -1,371 +1,263 @@
 # encore.fm
 
-*live radio on your schedule*
+**Live radio, on your schedule.**
 
-A self-hosted application for time-shifting HLS radio streams. Capture live broadcasts and play them back hours later - perfect for catching morning shows on your evening commute.
+Listen to global radio in your own timezone. encore.fm time-shifts live streams so you can catch BBC 6 Music's breakfast show during *your* morning — wherever you are in the world.
+
+![screenshot placeholder]
+
+---
+
+## Why?
+
+Live radio is scheduled for its home timezone. If you're 8 hours behind London, the breakfast show airs at midnight your time.
+
+encore.fm runs in the background, continuously buffering live radio. When you're ready to listen, it serves the stream on your preferred delay — so 8am in London plays at 8am in San Francisco.
+
+---
+
+## Quick Start
+
+```bash
+git clone https://github.com/mosse/encore.fm
+cd encore.fm
+npm install
+npm start
+```
+
+Open [http://localhost:3000](http://localhost:3000)
+
+> First run needs ~8 hours to fill the buffer before playback begins.
+
+---
 
 ## Features
 
-- Buffers radio streams for delayed playback
-- Hybrid buffer system with disk persistence for reliability across restarts
-- Supports m3u8 playlist formats (HLS)
-- Configurable delay and buffer durations
-- Comprehensive monitoring and logging
-- Graceful shutdown and error handling
-- System health checks
+- **Configurable time-shift** — 1 hour or 12, whatever fits your timezone
+- **Survives restarts** — buffer persists to disk
+- **PWA with background audio** — install on mobile, keeps playing when locked
+- **Runs on a Raspberry Pi** — minimal resources (~300MB RAM, ~1GB storage)
+- **Fully self-hosted** — no accounts, no cloud, no tracking
 
-## Setup
+---
 
-1. Install dependencies:
-   ```
-   npm install
-   ```
+## Supported Stations
 
-2. Start the server:
-   ```
-   npm start
-   ```
+Pre-configured for BBC Radio:
 
-   For development with auto-restart:
-   ```
-   npm run dev
-   ```
+| Station | ID |
+|---------|-----|
+| BBC Radio 1 | `bbc_radio_one` |
+| BBC Radio 2 | `bbc_radio_two` |
+| BBC Radio 3 | `bbc_radio_three` |
+| BBC Radio 4 | `bbc_radio_fourfm` |
+| BBC Radio 4 Extra | `bbc_radio_four_extra` |
+| BBC Radio 5 Live | `bbc_radio_five_live` |
+| **BBC Radio 6 Music** | `bbc_6music` *(default)* |
+| BBC Asian Network | `bbc_asian_network` |
+| BBC World Service | `bbc_world_service` |
+
+Works with any HLS stream — just provide an `.m3u8` URL.
+
+---
 
 ## Configuration
 
-Stream URLs and time settings can be configured in `src/config/config.js`. The following environment variables can be set:
+Edit `src/config/config.js` or use environment variables:
 
-- `PORT`: Server port (default: 3000)
-- `LOG_LEVEL`: Logging level (default: info)
-- `HEALTH_CHECK_INTERVAL`: Interval for health checks in ms (default: 60000)
-- `MONITOR_INTERVAL`: Interval for stream monitoring in ms (default: 5000)
-- `MAX_RETRIES`: Maximum download retries (default: 3)
-- `MAX_CONCURRENT_DOWNLOADS`: Maximum concurrent downloads (default: 3)
-- `SHUTDOWN_TIMEOUT`: Timeout for graceful shutdown in ms (default: 10000)
-- `BUFFER_DURATION`: Duration of the buffer in ms (default: 30600000, which is 8.5 hours)
-- `STORAGE_BASE_DIR`: Directory for storing segments (default: 'data')
-- `STORAGE_SEGMENTS_DIR`: Subdirectory for segments (default: 'segments')
-- `STORAGE_METADATA_FILE`: Filename for buffer metadata (default: 'buffer-metadata.json')
+```bash
+# Time delay (default: 8 hours)
+DELAY_DURATION=28800000
 
-### Configuring a Custom Stream Source
+# Buffer size (default: 8.5 hours)
+BUFFER_DURATION=30600000
 
-To use your preferred HLS stream, modify the `src/config/config.js` file:
+# Custom stream URL
+STREAM_URL=https://example.com/stream.m3u8
+```
 
-1. **Locate the stream configuration section**:
-   ```javascript
-   // Stream configuration
-   STREAM: {
-     URL: process.env.STREAM_URL || 'https://example.com/stream/audio.m3u8',
-     TIME_SHIFT: Number(process.env.TIME_SHIFT) || 8 * 60 * 60 * 1000, // 8 hours in milliseconds
-   },
-   ```
+---
 
-2. **Change the URL to your preferred stream**:
-   ```javascript
-   STREAM: {
-     URL: 'https://your-stream-provider.com/your-stream-url.m3u8',
-     TIME_SHIFT: 8 * 60 * 60 * 1000, // 8 hours in milliseconds
-   },
-   ```
+## Deploy
 
-3. **Alternatively, set the environment variable**:
-   ```bash
-   export STREAM_URL="https://your-stream-provider.com/your-stream-url.m3u8"
-   ```
-   
-   Or add it to your `.env` file:
-   ```
-   STREAM_URL=https://your-stream-provider.com/your-stream-url.m3u8
-   ```
+### Node.js
 
-4. **Adjust the time shift as needed**:
-   Change the `TIME_SHIFT` value to your desired delay in milliseconds.
-   
-   For example, for a 2-hour delay:
-   ```javascript
-   TIME_SHIFT: 2 * 60 * 60 * 1000, // 2 hours in milliseconds
-   ```
-   
-   Or set it with an environment variable:
-   ```bash
-   export TIME_SHIFT=7200000  # 2 hours in milliseconds
-   ```
+```bash
+npm install --production
+npm start
+```
 
-5. **Restart the application** for the changes to take effect:
-   ```bash
-   npm restart
-   # or if running as a service
-   sudo systemctl restart encore
-   ```
+### Systemd (auto-start on boot)
 
-**Note:** The stream must be an HLS stream with an m3u8 playlist format. Other streaming formats are not currently supported.
+```bash
+sudo cp contrib/encore.service /etc/systemd/system/
+sudo systemctl enable encore
+sudo systemctl start encore
+```
 
-## System Architecture
+### Raspberry Pi
 
-The application consists of several integrated services:
+Runs well on a Pi 3 or newer. See the [full Raspberry Pi guide](#raspberry-pi-deployment) below.
 
-1. **Monitor Service**: Monitors the radio stream for new segments
-2. **Downloader Service**: Downloads segments from the stream
-3. **Hybrid Buffer Service**: Stores segments on disk with in-memory metadata for delayed playback
-4. **Disk Storage Service**: Manages file operations for persistent storage
-5. **Playlist Generator**: Creates playlists for time-shifted content
-6. **Web Server**: Serves API and content to clients
+**Minimum specs:**
+- Raspberry Pi Zero 2 W or better
+- 8GB+ SD card (Class 10)
+- Stable network connection
 
-All services are orchestrated by a central Service Manager that handles:
-- Service initialization and startup
-- Inter-service communication
-- Graceful shutdown procedures
-- Error handling and recovery
+---
 
-## API Endpoints
+## How It Works
 
-- `/api/health`: System health status
-- `/api/status`: Detailed system status and metrics
-- `/api/segments`: List of segments in buffer
-- `/api/playlist`: Generate time-shifted playlist
-- `/api/restart`: Restart the acquisition pipeline
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Live HLS   │────▶│   Buffer    │────▶│   Player    │
+│   Stream    │     │  (8+ hrs)   │     │  (delayed)  │
+└─────────────┘     └─────────────┘     └─────────────┘
+                          │
+                          ▼
+                    ┌───────────┐
+                    │   Disk    │
+                    │ (persist) │
+                    └───────────┘
+```
+
+1. **Monitor** watches the live HLS stream for new segments
+2. **Downloader** fetches segments with retry logic
+3. **Buffer** stores segments on disk, indexed in memory
+4. **Playlist Generator** creates time-shifted playlists on demand
+5. **Web Server** serves the delayed stream to your player
+
+---
+
+## API
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /` | Web player |
+| `GET /api/health` | Health check |
+| `GET /api/status` | Buffer stats and system info |
+| `GET /api/playlist` | Time-shifted HLS playlist |
+| `GET /api/segments` | List buffered segments |
+| `POST /api/restart` | Restart acquisition pipeline |
+
+---
 
 ## Testing
 
-Run all tests:
-```
-npm test
+```bash
+npm test              # Run all tests
+npm run test:pwa      # PWA/service worker tests
+npm run test:routes   # API endpoint tests
+npm run test:buffer   # Buffer service tests
 ```
 
-Run specific test:
+---
+
+## Raspberry Pi Deployment
+
+### Hardware
+
+- Raspberry Pi 3/4/5 (Pi Zero 2 W works but tight)
+- 8GB+ microSD card (Class 10 / A1 rated)
+- Ethernet recommended for reliability
+
+### Install
+
+```bash
+# Install Node.js 18+
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Clone and install
+git clone https://github.com/mosse/encore.fm
+cd encore.fm
+npm install --production
+
+# Start
+npm start
 ```
-npm run test:system           # Run system integration test
-npm run test:pipeline         # Test acquisition pipeline
-npm run test:buffer           # Test buffer service
-npm run test:disk-storage     # Test disk storage service
-npm run test:hybrid-buffer    # Test hybrid buffer service
+
+### Run as a Service
+
+```bash
+sudo nano /etc/systemd/system/encore.service
 ```
+
+```ini
+[Unit]
+Description=encore.fm
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/encore.fm
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable encore
+sudo systemctl start encore
+```
+
+### Performance Tips
+
+```bash
+# Reduce swappiness (less SD card wear)
+echo "vm.swappiness=10" | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+
+# Mount logs to RAM
+echo "tmpfs /home/pi/encore.fm/logs tmpfs defaults,noatime,size=50M 0 0" | sudo tee -a /etc/fstab
+sudo mount -a
+```
+
+---
 
 ## Project Structure
 
 ```
 encore.fm/
 ├── src/
-│   ├── config/       # Configuration files
-│   ├── services/     # Service components
-│   │   ├── index.js              # Service manager
-│   │   ├── monitor-service.js    # Stream monitor
-│   │   ├── downloader-service.js # Segment downloader
-│   │   ├── buffer-service.js     # In-memory buffer (legacy)
-│   │   ├── hybrid-buffer-service.js # Disk-based buffer with memory index
-│   │   ├── disk-storage-service.js # File system operations
-│   │   └── playlist-generator.js # Playlist creation
-│   ├── routes/       # API endpoints
-│   ├── utils/        # Helper functions
-│   │   └── logger.js # Enhanced logging
-│   ├── test/         # Component tests
-│   ├── public/       # Static files
-│   ├── app.js        # Express application
-│   └── index.js      # Application orchestrator
-├── test/             # System tests
-│   └── system-test.js # End-to-end test
-├── data/             # Segment and metadata storage
-│   ├── segments/     # Audio segments
-│   └── buffer-metadata.json # Buffer state
-└── logs/             # Log files
+│   ├── config/           # Configuration
+│   ├── services/         # Core services
+│   │   ├── monitor-service.js
+│   │   ├── downloader-service.js
+│   │   ├── hybrid-buffer-service.js
+│   │   └── playlist-generator.js
+│   ├── routes/           # API endpoints
+│   ├── public/           # Web player (PWA)
+│   └── test/             # Tests
+├── data/
+│   ├── segments/         # Audio segments
+│   └── buffer-metadata.json
+└── logs/
 ```
 
-## Logging and Monitoring
+---
 
-The application includes comprehensive logging with:
-- Formatted console output
-- File-based logs with rotation
-- Performance metrics
-- Request tracking
+## FAQ
 
-Health checks monitor all system components and can be accessed via the `/api/health` endpoint.
+**Q: Why does it need 8 hours to start?**
+The buffer needs to fill before playback can begin at the configured delay. You can reduce `DELAY_DURATION` for faster startup (but less time-shift).
 
-## Error Handling and Recovery
+**Q: Can I use streams other than BBC?**
+Yes — any HLS stream with an `.m3u8` playlist works. Set `STREAM_URL` to your stream.
 
-The system implements:
-- Persistent buffer storage for recovery after restart
-- Graceful shutdown on SIGTERM and SIGINT signals
-- Automatic recovery from connection errors
-- Service restart capabilities
-- Comprehensive error logging
+**Q: What happens if the server restarts?**
+The buffer persists to disk. On restart, it reloads existing segments and continues where it left off. Any gap during downtime is lost.
 
-## Raspberry Pi Deployment
+**Q: Does this work outside the UK?**
+Yes. The default BBC streams work worldwide (some programmes may be geoblocked due to music licensing).
 
-### Hardware Requirements
-- Raspberry Pi 4 (2GB RAM minimum, 4GB recommended)
-- 32GB or larger microSD card (Class 10 or better)
-- Reliable power supply
-- Ethernet connection (recommended) or stable WiFi
+---
 
-### Installation Steps
+## License
 
-1. **Set up Raspberry Pi OS**
-   - Download and install Raspberry Pi OS Lite (64-bit recommended)
-   - Set up SSH for headless operation
-   - Update the system:
-     ```
-     sudo apt update && sudo apt upgrade -y
-     ```
-
-2. **Install Node.js**
-   ```bash
-   # Install Node.js repository
-   curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-   
-   # Install Node.js
-   sudo apt install -y nodejs
-   
-   # Verify installation
-   node --version
-   npm --version
-   ```
-
-3. **Clone and Set Up the Application**
-   ```bash
-   # Create application directory
-   mkdir -p ~/apps
-   cd ~/apps
-   
-   # Clone the repository
-   git clone https://github.com/mosse/encore.fm.git
-   cd encore.fm
-   
-   # Install dependencies
-   npm install --production
-   
-   # Create data directories
-   mkdir -p data/segments
-   ```
-
-4. **Configure the Application**
-   ```bash
-   # Create environment variables file
-   cat > .env << EOF
-   PORT=3000
-   LOG_LEVEL=info
-   BUFFER_DURATION=30600000
-   STORAGE_BASE_DIR=data
-   STORAGE_SEGMENTS_DIR=segments
-   STORAGE_METADATA_FILE=buffer-metadata.json
-   STREAM_URL=https://your-stream-provider.com/your-stream-url.m3u8
-   TIME_SHIFT=28800000
-   EOF
-   ```
-
-5. **Set Up Systemd Service for Auto-start**
-   ```bash
-   # Create service file
-   sudo bash -c 'cat > /etc/systemd/system/encore.service << EOF
-   [Unit]
-   Description=encore.fm Radio Service
-   After=network.target
-
-   [Service]
-   Type=simple
-   User=pi
-   WorkingDirectory=/home/pi/apps/encore.fm
-   ExecStart=/usr/bin/node src/index.js
-   Restart=always
-   RestartSec=10
-   StandardOutput=syslog
-   StandardError=syslog
-   SyslogIdentifier=encore
-   Environment=NODE_ENV=production
-
-   [Install]
-   WantedBy=multi-user.target
-   EOF'
-
-   # Enable and start the service
-   sudo systemctl enable encore
-   sudo systemctl start encore
-   ```
-
-6. **Monitor the Service**
-   ```bash
-   # Check service status
-   sudo systemctl status encore
-
-   # View logs
-   sudo journalctl -u encore -f
-   ```
-
-7. **Set Up Storage Management (Optional)**
-   ```bash
-   # Create a daily cron job to clean up old log files
-   (crontab -l 2>/dev/null; echo "0 0 * * * find /home/pi/apps/encore.fm/logs -name \"*.log.\" -mtime +7 -delete") | crontab -
-   ```
-
-8. **Access the Web Interface**
-   
-   Open a browser and navigate to `http://<raspberry-pi-ip>:3000`
-
-### Performance Tuning
-
-1. **Adjust swappiness for better performance**
-   ```bash
-   echo "vm.swappiness=10" | sudo tee -a /etc/sysctl.conf
-   sudo sysctl -p
-   ```
-   
-   **What is swappiness?** 
-   Swappiness is a Linux kernel parameter that controls how aggressively the system swaps memory pages from RAM to the swap file. Values range from 0 to 100:
-   
-   - Higher values (default is 60) make the system more aggressive about moving memory to swap
-   - Lower values (like 10) tell the system to avoid swapping unless necessary
-   
-   **Why change it for this application?**
-   
-   - The encore.fm buffer service keeps metadata indices in memory for performance
-   - SD cards have much slower read/write speeds than RAM
-   - Excessive swapping causes significant performance degradation on Raspberry Pi
-   - Lower swappiness reduces I/O operations on the SD card, extending card lifespan
-   - Setting it to 10 (not 0) still allows swapping when memory pressure is high
-   
-   This adjustment maintains responsive performance while still providing memory protection during peak loads.
-
-2. **Optimize file system for SD card longevity**
-   ```bash
-   # Add to /etc/fstab
-   sudo bash -c 'echo "tmpfs /home/pi/apps/encore.fm/logs tmpfs defaults,noatime,size=100M 0 0" >> /etc/fstab'
-   sudo mount -a
-   ```
-
-3. **Monitor resource usage**
-   ```bash
-   # Install htop for better system monitoring
-   sudo apt install htop
-   
-   # Run htop to monitor system resources
-   htop
-   ```
-
-### Troubleshooting
-
-If the service fails to start or crashes:
-
-1. Check the logs:
-   ```bash
-   sudo journalctl -u encore -e
-   ```
-
-2. Verify disk space:
-   ```bash
-   df -h
-   ```
-
-3. Check memory usage:
-   ```bash
-   free -h
-   ```
-
-4. Manual restart:
-   ```bash
-   sudo systemctl restart encore
-   ```
-
-5. Test the application manually:
-   ```bash
-   cd ~/apps/encore.fm
-   node src/index.js
-   ``` 
+ISC
