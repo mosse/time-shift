@@ -15,8 +15,6 @@ Live radio airs on someone else's clock. encore.fm buffers any HLS stream and pl
 **Use cases:**
 - Listen to overseas radio in your own timezone
 - Catch morning shows on your evening commute
-- Skip ads by buffering and fast-forwarding (if the stream allows)
-- Record streams for later without browser tabs
 
 ---
 
