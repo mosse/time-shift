@@ -348,6 +348,9 @@ document.addEventListener('DOMContentLoaded', function() {
      * Update station display
      */
     function updateStationDisplay(station) {
+        // Store for media session use
+        currentStationInfo = station;
+
         if (station.name && stationName) {
             stationName.textContent = station.name;
         }
@@ -441,6 +444,85 @@ document.addEventListener('DOMContentLoaded', function() {
             trackArt.classList.add('hidden');
             trackInfo.classList.add('no-art');
         }
+
+        // Update lock screen / media session
+        updateMediaSession(track);
+    }
+
+    /**
+     * Current station info for media session fallback
+     */
+    let currentStationInfo = null;
+
+    /**
+     * Update Media Session API for lock screen display
+     */
+    function updateMediaSession(track) {
+        if (!('mediaSession' in navigator)) {
+            return;
+        }
+
+        // Build artwork array - prefer track art, fall back to station logo
+        const artwork = [];
+        if (track && track.imageUrl) {
+            artwork.push({
+                src: track.imageUrl,
+                sizes: '512x512',
+                type: 'image/jpeg'
+            });
+        } else if (currentStationInfo && currentStationInfo.logoUrl) {
+            artwork.push({
+                src: currentStationInfo.logoUrl,
+                sizes: '512x512',
+                type: 'image/svg+xml'
+            });
+        }
+
+        // Set metadata
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: track ? track.title : 'encore.fm',
+            artist: track ? track.artist : 'Live Radio',
+            album: currentStationInfo ? currentStationInfo.name : 'encore.fm',
+            artwork: artwork
+        });
+
+        // Set up action handlers
+        navigator.mediaSession.setActionHandler('play', function() {
+            audio.play();
+        });
+        navigator.mediaSession.setActionHandler('pause', function() {
+            audio.pause();
+        });
+        // Disable unsupported actions for live radio
+        navigator.mediaSession.setActionHandler('seekbackward', null);
+        navigator.mediaSession.setActionHandler('seekforward', null);
+        navigator.mediaSession.setActionHandler('previoustrack', null);
+        navigator.mediaSession.setActionHandler('nexttrack', null);
+    }
+
+    /**
+     * Update media session with default/waiting state
+     */
+    function updateMediaSessionDefault() {
+        if (!('mediaSession' in navigator)) {
+            return;
+        }
+
+        const artwork = [];
+        if (currentStationInfo && currentStationInfo.logoUrl) {
+            artwork.push({
+                src: currentStationInfo.logoUrl,
+                sizes: '512x512',
+                type: 'image/svg+xml'
+            });
+        }
+
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: currentStationInfo ? currentStationInfo.name : 'encore.fm',
+            artist: 'Live Radio',
+            album: 'encore.fm',
+            artwork: artwork
+        });
     }
 
     /**
@@ -452,6 +534,9 @@ document.addEventListener('DOMContentLoaded', function() {
         trackArtist.textContent = 'Waiting for track info...';
         trackArt.src = '';
         trackArt.classList.add('hidden');
+
+        // Update lock screen with default info
+        updateMediaSessionDefault();
     }
 
     /**
