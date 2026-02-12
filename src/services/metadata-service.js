@@ -361,29 +361,23 @@ class MetadataService extends EventEmitter {
       }
     }
 
-    // Fallback: find closest track within tolerance
+    // Fallback: find most recent past track within tolerance
     // (handles gaps between tracks, e.g., DJ talking)
-    let closest = null;
-    let closestDiff = Infinity;
+    let mostRecentPast = null;
+    let smallestGap = Infinity;
 
     for (const entry of this.metadata) {
-      // Distance to this track's time range
-      let diff;
-      if (timestamp < entry.onset) {
-        diff = entry.onset - timestamp;
-      } else if (timestamp > entry.end) {
-        diff = timestamp - entry.end;
-      } else {
-        diff = 0; // Should have matched above
-      }
-
-      if (diff < closestDiff && diff <= tolerance) {
-        closest = entry;
-        closestDiff = diff;
+      // Only consider tracks that have ended before this timestamp
+      if (entry.end <= timestamp) {
+        const gap = timestamp - entry.end;
+        if (gap < smallestGap && gap <= tolerance) {
+          mostRecentPast = entry;
+          smallestGap = gap;
+        }
       }
     }
 
-    return closest?.data || null;
+    return mostRecentPast?.data || null;
   }
 
   /**
