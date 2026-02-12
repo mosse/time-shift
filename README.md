@@ -2,7 +2,7 @@
 
 **Live radio, on your schedule.**
 
-Listen to global radio in your own timezone. encore.fm time-shifts live streams so you can catch BBC 6 Music's breakfast show during *your* morning — wherever you are in the world.
+A self-hosted time-shifting proxy for any HLS radio stream. Set your delay, point it at a stream, and listen on your own schedule.
 
 ![screenshot placeholder]
 
@@ -10,9 +10,13 @@ Listen to global radio in your own timezone. encore.fm time-shifts live streams 
 
 ## Why?
 
-Live radio is scheduled for its home timezone. If you're 8 hours behind London, the breakfast show airs at midnight your time.
+Live radio airs on someone else's clock. encore.fm buffers any HLS stream and plays it back on a configurable delay — 1 hour, 8 hours, whatever fits your life.
 
-encore.fm runs in the background, continuously buffering live radio. When you're ready to listen, it serves the stream on your preferred delay — so 8am in London plays at 8am in San Francisco.
+**Use cases:**
+- Listen to overseas radio in your own timezone
+- Catch morning shows on your evening commute
+- Skip ads by buffering and fast-forwarding (if the stream allows)
+- Record streams for later without browser tabs
 
 ---
 
@@ -27,13 +31,14 @@ npm start
 
 Open [http://localhost:3000](http://localhost:3000)
 
-> First run needs ~8 hours to fill the buffer before playback begins.
+> Buffer fills in real-time. An 8-hour delay needs ~8 hours before playback begins.
 
 ---
 
 ## Features
 
-- **Configurable time-shift** — 1 hour or 12, whatever fits your timezone
+- **Any HLS stream** — works with any `.m3u8` URL
+- **Configurable delay** — 1 hour to 12+ hours via environment variable
 - **Survives restarts** — buffer persists to disk
 - **PWA with background audio** — install on mobile, keeps playing when locked
 - **Runs on a Raspberry Pi** — minimal resources (~300MB RAM, ~1GB storage)
@@ -41,9 +46,34 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ---
 
-## Supported Stations
+## Configuration
 
-Pre-configured for BBC Radio:
+All settings via environment variables:
+
+```bash
+# Your stream URL (required for non-BBC streams)
+STREAM_URL=https://example.com/stream.m3u8
+
+# Time delay in milliseconds (default: 8 hours)
+DELAY_DURATION=28800000
+
+# Buffer size in milliseconds (default: 8.5 hours — should exceed delay)
+BUFFER_DURATION=30600000
+
+# Server port (default: 3000)
+PORT=3000
+```
+
+**Example: 2-hour delay**
+```bash
+DELAY_DURATION=7200000 BUFFER_DURATION=9000000 npm start
+```
+
+---
+
+## BBC Radio Streams (built-in)
+
+Pre-configured station URLs for BBC Radio — just works out of the box:
 
 | Station | ID |
 |---------|-----|
@@ -57,24 +87,7 @@ Pre-configured for BBC Radio:
 | BBC Asian Network | `bbc_asian_network` |
 | BBC World Service | `bbc_world_service` |
 
-Works with any HLS stream — just provide an `.m3u8` URL.
-
----
-
-## Configuration
-
-Edit `src/config/config.js` or use environment variables:
-
-```bash
-# Time delay (default: 8 hours)
-DELAY_DURATION=28800000
-
-# Buffer size (default: 8.5 hours)
-BUFFER_DURATION=30600000
-
-# Custom stream URL
-STREAM_URL=https://example.com/stream.m3u8
-```
+To use a different BBC station, set the station ID in config or use the `getStreamUrl()` helper.
 
 ---
 
@@ -301,17 +314,20 @@ encore.fm/
 
 ## FAQ
 
-**Q: Why does it need 8 hours to start?**
-The buffer needs to fill before playback can begin at the configured delay. You can reduce `DELAY_DURATION` for faster startup (but less time-shift).
+**Q: Why does it take so long before I can play?**
+The buffer fills in real-time. An 8-hour delay needs 8 hours of buffering first. Set a shorter `DELAY_DURATION` for faster startup.
 
-**Q: Can I use streams other than BBC?**
-Yes — any HLS stream with an `.m3u8` playlist works. Set `STREAM_URL` to your stream.
+**Q: What streams work with this?**
+Any HLS stream (`.m3u8` URL). This includes most internet radio stations, some TV audio streams, and live event broadcasts.
 
 **Q: What happens if the server restarts?**
-The buffer persists to disk. On restart, it reloads existing segments and continues where it left off. Any gap during downtime is lost.
+The buffer persists to disk. On restart, it reloads existing segments and continues. Any gap during downtime is lost (segments that weren't captured can't be recovered).
 
-**Q: Does this work outside the UK?**
-Yes. The default BBC streams work worldwide (some programmes may be geoblocked due to music licensing).
+**Q: Can I run multiple streams?**
+Not yet in a single instance. Run multiple containers/instances with different `STREAM_URL` and `PORT` values.
+
+**Q: Does the default BBC stream work outside the UK?**
+Yes. BBC streams work worldwide, though some programmes may be geoblocked due to music licensing.
 
 ---
 
