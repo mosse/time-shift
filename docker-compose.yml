@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  encore:
+    build: .
+    container_name: encore-fm
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - encore-data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      # Uncomment to customize:
+      # - DELAY_DURATION=28800000      # 8 hours in ms
+      # - BUFFER_DURATION=30600000     # 8.5 hours in ms
+      # - STREAM_URL=https://example.com/stream.m3u8
+
+volumes:
+  encore-data:
