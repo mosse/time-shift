@@ -363,6 +363,9 @@ document.addEventListener('DOMContentLoaded', function() {
      * Update show/programme display
      */
     function updateShowDisplay(show) {
+        // Store for media session fallback
+        currentShowInfo = show;
+
         // Update show title
         if (showTitle) {
             showTitle.textContent = show.title || 'BBC Radio 6 Music';
@@ -450,9 +453,10 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     /**
-     * Current station info for media session fallback
+     * Current station/show info for media session fallback
      */
     let currentStationInfo = null;
+    let currentShowInfo = null;
 
     /**
      * Update Media Session API for lock screen display
@@ -487,6 +491,52 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         // Set up action handlers
+        setupMediaSessionHandlers();
+    }
+
+    /**
+     * Update media session with show info (fallback when no track)
+     */
+    function updateMediaSessionWithShow() {
+        if (!('mediaSession' in navigator)) {
+            return;
+        }
+
+        // Build artwork array - prefer show art, fall back to station logo
+        const artwork = [];
+        if (currentShowInfo && currentShowInfo.imageUrl) {
+            artwork.push({
+                src: currentShowInfo.imageUrl,
+                sizes: '512x512',
+                type: 'image/jpeg'
+            });
+        } else if (currentStationInfo && currentStationInfo.logoUrl) {
+            artwork.push({
+                src: currentStationInfo.logoUrl,
+                sizes: '512x512',
+                type: 'image/svg+xml'
+            });
+        }
+
+        // Use show title and presenter
+        const title = currentShowInfo ? currentShowInfo.title : (currentStationInfo ? currentStationInfo.name : 'encore.fm');
+        const artist = currentShowInfo ? (currentShowInfo.presenter || currentShowInfo.subtitle || 'Live Radio') : 'Live Radio';
+
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: title,
+            artist: artist,
+            album: currentStationInfo ? currentStationInfo.name : 'encore.fm',
+            artwork: artwork
+        });
+
+        // Set up action handlers
+        setupMediaSessionHandlers();
+    }
+
+    /**
+     * Set up media session action handlers
+     */
+    function setupMediaSessionHandlers() {
         navigator.mediaSession.setActionHandler('play', function() {
             audio.play();
         });
@@ -501,31 +551,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     /**
-     * Update media session with default/waiting state
-     */
-    function updateMediaSessionDefault() {
-        if (!('mediaSession' in navigator)) {
-            return;
-        }
-
-        const artwork = [];
-        if (currentStationInfo && currentStationInfo.logoUrl) {
-            artwork.push({
-                src: currentStationInfo.logoUrl,
-                sizes: '512x512',
-                type: 'image/svg+xml'
-            });
-        }
-
-        navigator.mediaSession.metadata = new MediaMetadata({
-            title: currentStationInfo ? currentStationInfo.name : 'encore.fm',
-            artist: 'Live Radio',
-            album: 'encore.fm',
-            artwork: artwork
-        });
-    }
-
-    /**
      * Show waiting state when no track info is available yet
      */
     function showWaitingForTrack() {
@@ -535,8 +560,8 @@ document.addEventListener('DOMContentLoaded', function() {
         trackArt.src = '';
         trackArt.classList.add('hidden');
 
-        // Update lock screen with default info
-        updateMediaSessionDefault();
+        // Update lock screen with show info (falls back to station)
+        updateMediaSessionWithShow();
     }
 
     /**
