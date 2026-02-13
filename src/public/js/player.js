@@ -1,10 +1,10 @@
 /**
  * encore.fm player
- * Minimal HLS audio player with reconnection logic.
+ * Minimal HLS audio player with reconnection logic and custom controls.
  */
 document.addEventListener('DOMContentLoaded', function() {
     const audio = document.getElementById('audio');
-    const statusEl = document.getElementById('status');
+    const playButton = document.getElementById('playButton');
     const connectionStatus = document.getElementById('connectionStatus');
     const connectionIndicator = document.getElementById('connectionIndicator');
 
@@ -46,6 +46,8 @@ document.addEventListener('DOMContentLoaded', function() {
     let secondsRemaining = 0;
     let currentBufferSecs = 0;
     let requiredBufferSecs = 0;
+    let isPlaying = false;
+    let isLoading = false;
 
     const hlsConfig = {
         debug: false,
@@ -69,20 +71,31 @@ document.addEventListener('DOMContentLoaded', function() {
         fragLoadingMaxRetry: 6
     };
 
-    function setStatus(message, type) {
-        statusEl.textContent = message;
-        statusEl.className = 'status';
-        if (type === 'error' || type === 'warn') {
-            statusEl.classList.add(type);
-        }
-    }
-
     function setConnection(state) {
         connectionStatus.textContent = state;
         connectionIndicator.className = 'indicator';
         if (state === 'Connected') connectionIndicator.classList.add('connected');
         else if (state === 'Connecting' || state === 'Buffering') connectionIndicator.classList.add('connecting');
         else if (state === 'Error') connectionIndicator.classList.add('error');
+    }
+
+    function setLoading(loading) {
+        isLoading = loading;
+        if (loading) {
+            playButton.classList.add('loading');
+        } else {
+            playButton.classList.remove('loading');
+        }
+    }
+
+    function updatePlayButtonState() {
+        if (isPlaying) {
+            playButton.classList.add('playing');
+            playButton.setAttribute('aria-label', 'Pause');
+        } else {
+            playButton.classList.remove('playing');
+            playButton.setAttribute('aria-label', 'Play');
+        }
     }
 
     function cancelReconnect() {
@@ -95,15 +108,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function scheduleReconnect() {
         if (reconnectAttempts >= maxReconnectAttempts) {
-            setStatus('Connection failed. Please refresh the page to try again.', 'error');
             setConnection('Error');
+            setLoading(false);
             cancelReconnect();
             return;
         }
 
         reconnectAttempts++;
         const delay = Math.min(1000 * Math.pow(1.5, reconnectAttempts), 10000);
-        setStatus('Connection lost. Reconnecting (' + reconnectAttempts + '/' + maxReconnectAttempts + ')...', 'warn');
         setConnection('Connecting');
 
         reconnectTimer = setTimeout(initPlayer, delay);
@@ -111,8 +123,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function initPlayer() {
         cancelReconnect();
-        setStatus('Connecting...', 'warn');
         setConnection('Connecting');
+        setLoading(true);
 
         if (hls) {
             hls.destroy();
@@ -123,8 +135,10 @@ document.addEventListener('DOMContentLoaded', function() {
             hls = new Hls(hlsConfig);
 
             hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                setStatus('Stream ready. Press play to listen.');
                 setConnection('Connected');
+                setLoading(false);
+                // Auto-play after manifest is loaded
+                audio.play().catch(function() {});
             });
 
             hls.on(Hls.Events.FRAG_LOADED, function() {
@@ -136,7 +150,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 switch (data.type) {
                     case Hls.ErrorTypes.NETWORK_ERROR:
-                        setStatus('Network error. Recovering...', 'error');
                         setConnection('Error');
                         if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
                             data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT) {
@@ -146,12 +159,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                         break;
                     case Hls.ErrorTypes.MEDIA_ERROR:
-                        setStatus('Media error. Recovering...', 'error');
                         hls.recoverMediaError();
                         break;
                     default:
-                        setStatus('Playback error. Please refresh.', 'error');
                         setConnection('Error');
+                        setLoading(false);
                         hls.destroy();
                         hls = null;
                         break;
@@ -162,58 +174,70 @@ document.addEventListener('DOMContentLoaded', function() {
             hls.attachMedia(audio);
 
         } else if (audio.canPlayType('application/vnd.apple.mpegurl')) {
-            // Native HLS (Safari)
+            // Native HLS (Safari/iOS)
             audio.src = streamUrl;
 
             audio.addEventListener('loadedmetadata', function() {
-                setStatus('Stream ready. Press play to listen.');
                 setConnection('Connected');
+                setLoading(false);
+                audio.play().catch(function() {});
             });
 
             audio.addEventListener('error', function() {
-                setStatus('Playback error. Reconnecting...', 'error');
                 setConnection('Error');
                 scheduleReconnect();
             });
         } else {
-            setStatus('HLS is not supported in this browser. Try Chrome, Firefox, or Safari.', 'error');
             setConnection('Error');
+            setLoading(false);
             return;
         }
 
+        // Audio event listeners
         audio.addEventListener('play', function() {
-            setStatus('Playing');
+            isPlaying = true;
+            updatePlayButtonState();
             setConnection('Connected');
         });
 
         audio.addEventListener('pause', function() {
-            setStatus('Paused');
+            isPlaying = false;
+            updatePlayButtonState();
         });
 
         audio.addEventListener('waiting', function() {
-            setStatus('Buffering...', 'warn');
             setConnection('Buffering');
         });
 
         audio.addEventListener('playing', function() {
-            setStatus('Playing');
+            isPlaying = true;
+            updatePlayButtonState();
             setConnection('Connected');
+            setLoading(false);
         });
     }
 
-    // Start on first user interaction with the play button (via native <audio> controls)
-    audio.addEventListener('play', function onFirstPlay() {
-        if (!hls && Hls.isSupported()) {
+    // Track if player has been initialized
+    let playerInitialized = false;
+
+    // Custom play button handler
+    playButton.addEventListener('click', function() {
+        if (isLoading) return;
+
+        if (!playerInitialized) {
+            // First play - initialize player
+            playerInitialized = true;
             initPlayer();
-            // After init, auto-play
-            var waitForReady = setInterval(function() {
-                if (hls && audio.readyState >= 2) {
-                    clearInterval(waitForReady);
-                    audio.play().catch(function() {});
-                }
-            }, 200);
+        } else if (audio.paused) {
+            setLoading(true);
+            audio.play().then(function() {
+                setLoading(false);
+            }).catch(function() {
+                setLoading(false);
+            });
+        } else {
+            audio.pause();
         }
-        audio.removeEventListener('play', onFirstPlay);
     });
 
     function formatTime(seconds) {
@@ -229,7 +253,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const percent = Math.min(100, (currentBufferSecs / requiredBufferSecs) * 100);
         countdownTime.textContent = formatTime(secondsRemaining);
         progressBar.style.width = percent.toFixed(1) + '%';
-        bufferStatus.textContent = formatTime(currentBufferSecs) + ' of ' + formatTime(requiredBufferSecs) + ' buffered (' + percent.toFixed(1) + '%)';
+        bufferStatus.textContent = formatTime(currentBufferSecs) + ' of ' + formatTime(requiredBufferSecs) + ' buffered';
     }
 
     function tickCountdown() {
@@ -256,15 +280,14 @@ document.addEventListener('DOMContentLoaded', function() {
             countdownTimer = null;
         }
         waitingContainer.style.display = 'none';
-        playerContainer.style.display = 'block';
+        playerContainer.style.display = 'flex';
         bufferReady = true;
-        initPlayer();
         // Start fetching track metadata
         startMetadataPolling();
     }
 
     function showWaiting() {
-        waitingContainer.style.display = 'block';
+        waitingContainer.style.display = 'flex';
         playerContainer.style.display = 'none';
         if (!countdownTimer) {
             countdownTimer = setInterval(tickCountdown, 1000);
@@ -290,7 +313,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
         } catch (error) {
-            bufferStatus.textContent = 'Error checking buffer status';
+            bufferStatus.textContent = 'Checking...';
         }
     }
 
@@ -345,11 +368,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     /**
-     * Update station display
+     * Update station display (in header)
      */
     function updateStationDisplay(station) {
         if (station.name && stationName) {
-            stationName.textContent = station.name;
+            // Use short name for header
+            const shortName = station.name.replace('BBC Radio ', '').replace('BBC ', '');
+            stationName.textContent = shortName;
         }
         if (station.logoUrl && stationLogo) {
             stationLogo.src = station.logoUrl;
@@ -418,6 +443,12 @@ document.addEventListener('DOMContentLoaded', function() {
      * Update the track display with new metadata
      */
     function updateTrackDisplay(track) {
+        // Add transition class briefly
+        trackInfo.classList.add('changing');
+        setTimeout(function() {
+            trackInfo.classList.remove('changing');
+        }, 300);
+
         // Remove loading/no-art states
         trackInfo.classList.remove('loading', 'no-art');
 
@@ -461,7 +492,7 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 timeStr = minutes + ' min';
             }
-            trackArtist.textContent = 'Available in ' + timeStr + ' of playback';
+            trackArtist.textContent = 'Available in ' + timeStr;
         } else {
             trackArtist.textContent = 'Waiting for track info...';
         }

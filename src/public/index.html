@@ -2,24 +2,27 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
     <meta name="description" content="encore.fm - live radio on your schedule">
-    <meta name="theme-color" content="#667eea">
+    <meta name="theme-color" content="#000000">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="encore.fm">
     <title>encore.fm</title>
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="/icons/icon-152.png">
     <link rel="stylesheet" href="css/styles.css">
     <script src="js/hls.min.js"></script>
-    <script src="js/player.js"></script>
 </head>
 <body>
     <div class="container">
         <header>
             <h1><span class="logo">encore</span><span class="logo-dot">.fm</span></h1>
-            <p class="tagline">live radio on your schedule</p>
+            <div class="header-station">
+                <img id="stationLogo" src="https://sounds.files.bbci.co.uk/3.9.4/networks/bbc_6music/colour_default.svg" alt="">
+                <span id="stationName">6 Music</span>
+                <span>· 8h ago</span>
+            </div>
         </header>
 
         <main>
@@ -37,13 +40,7 @@
             </div>
 
             <div id="playerContainer" class="player-container" style="display: none;">
-                <div class="station-header">
-                    <img id="stationLogo" class="station-logo-img" src="https://sounds.files.bbci.co.uk/3.9.4/networks/bbc_6music/colour_default.svg" alt="BBC Radio 6 Music">
-                    <div class="station-details">
-                        <p id="stationName" class="station-name">BBC Radio 6 Music</p>
-                        <p class="station-delay">8 hours delayed</p>
-                    </div>
-                </div>
+                <div class="station-header"></div>
 
                 <div id="showInfo" class="show-info">
                     <img id="showArt" class="show-art" src="" alt="Programme artwork">
@@ -54,25 +51,34 @@
                     </div>
                 </div>
 
-                <div id="trackInfo" class="track-info">
-                    <div class="now-playing-label">Now Playing</div>
-                    <div class="track-content">
-                        <img id="trackArt" class="track-art" src="" alt="Album art">
-                        <div class="track-details">
-                            <p id="trackTitle" class="track-title">Waiting for track info...</p>
-                            <p id="trackArtist" class="track-artist"></p>
+                <div class="player-right">
+                    <div class="player-status">
+                        <div class="connection-status">
+                            <span id="connectionIndicator" class="indicator"></span>
+                            <span id="connectionStatus">Idle</span>
                         </div>
                     </div>
-                </div>
 
-                <audio id="audio" controls aria-label="Radio stream player"></audio>
-
-                <div class="player-footer">
-                    <div id="status" class="status" aria-live="polite">Ready. Press play to start streaming.</div>
-                    <div class="connection-status">
-                        <span id="connectionIndicator" class="indicator"></span>
-                        <span id="connectionStatus">Idle</span>
+                    <div id="trackInfo" class="track-info">
+                        <div class="track-content">
+                            <img id="trackArt" class="track-art" src="" alt="Album art">
+                            <div class="track-details">
+                                <p id="trackTitle" class="track-title">Waiting for track info...</p>
+                                <p id="trackArtist" class="track-artist"></p>
+                            </div>
+                            <button id="playButton" class="play-button" aria-label="Play">
+                                <svg class="icon-play" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <polygon points="6,4 20,12 6,20"/>
+                                </svg>
+                                <svg class="icon-pause" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <rect x="5" y="4" width="4" height="16" rx="1"/>
+                                    <rect x="15" y="4" width="4" height="16" rx="1"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
+
+                    <audio id="audio" aria-label="Radio stream player"></audio>
                 </div>
             </div>
         </main>
@@ -82,8 +88,8 @@
         </footer>
     </div>
 
+    <script src="js/player.js"></script>
     <script>
-        // Register service worker for PWA and background audio
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/sw.js')
@@ -95,10 +101,8 @@
                     });
             });
 
-            // Listen for messages from service worker
             navigator.serviceWorker.addEventListener('message', (event) => {
                 if (event.data && event.data.type === 'RECONNECT') {
-                    // Attempt to reconnect the audio stream
                     const audio = document.getElementById('audio');
                     if (audio && audio.paused) {
                         audio.play().catch(() => {});
