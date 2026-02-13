@@ -98,23 +98,36 @@ router.get('/', (req, res) => {
  * Returns metadata for the track currently being played (8 hours delayed)
  * Also includes show/DJ info and station info
  */
-router.get('/metadata/current', (req, res) => {
+router.get('/metadata/current', async (req, res) => {
   try {
-    // Get the current playback time (8 hours ago)
-    const bufferStats = hybridBufferService.getBufferStats();
-    const playbackTime = bufferStats.oldestTimestamp || (Date.now() - 28800000);
+    // Calculate playback time based on the 8-hour delay
+    // Subtract additional buffer offset to account for HLS player buffering (~30 seconds)
+    const now = Date.now();
+    const hlsBufferOffset = 60000; // 60 seconds for HLS buffering delay
+    const playbackTime = now - 28800000 - hlsBufferOffset; // 8 hours + buffer offset
 
     // Get metadata for that time
     const track = metadataService.getMetadataAt(playbackTime);
     const show = metadataService.getShowAt(playbackTime);
     const station = metadataService.getStationInfo();
 
+    // Calculate when track metadata will be available if not currently available
+    let trackAvailableIn = null;
+    if (!track) {
+      const stats = metadataService.getStats();
+      if (stats.oldestEntry && playbackTime < stats.oldestEntry) {
+        // Playback position is before metadata coverage starts
+        trackAvailableIn = Math.ceil((stats.oldestEntry - playbackTime) / 1000);
+      }
+    }
+
     res.json({
       status: 'ok',
       playbackTime: new Date(playbackTime).toISOString(),
       station,
       show,
-      track
+      track,
+      trackAvailableIn
     });
   } catch (error) {
     // Never fail the response - metadata is non-critical
@@ -124,6 +137,7 @@ router.get('/metadata/current', (req, res) => {
       station: metadataService.getStationInfo(),
       show: null,
       track: null,
+      trackAvailableIn: null,
       message: 'Metadata temporarily unavailable'
     });
   }

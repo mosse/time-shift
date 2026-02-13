@@ -54,6 +54,11 @@ class MetadataService extends EventEmitter {
     this.isRunning = true;
     logger.info('Metadata service started');
 
+    // Backfill historical tracks on startup (fire and forget)
+    this._backfillHistoricalTracks().catch(err => {
+      logger.warn(`Historical track backfill failed: ${err.message}`);
+    });
+
     // Initial fetch
     this._safePoll();
 
@@ -157,12 +162,17 @@ class MetadataService extends EventEmitter {
     const now = Date.now();
     let newItems = 0;
 
+    // Find the maximum offset (most recent track's end time in programme)
+    // This represents "now" in programme time
+    const maxOffset = Math.max(...response.data.map(item => item.offset?.end || item.offset?.start || 0));
+
     for (const item of response.data) {
       if (item.segment_type !== 'music') continue;
 
-      // Calculate the actual broadcast time based on offset
-      // offset.start is seconds from the start of the current program
-      const broadcastTime = now - ((item.offset?.start || 0) * 1000);
+      // Calculate broadcast time: how many seconds ago did this track start?
+      // maxOffset is current position in programme, item.offset.start is when track began
+      const secondsAgo = maxOffset - (item.offset?.start || 0);
+      const broadcastTime = now - (secondsAgo * 1000);
 
       // Check if we already have this item (by ID)
       const existingIndex = this.metadata.findIndex(m => m.data.id === item.id);
@@ -300,6 +310,110 @@ class MetadataService extends EventEmitter {
   }
 
   /**
+   * Backfill historical track data from past broadcasts
+   * Fetches track listings for broadcasts from the past 9 hours
+   * @private
+   */
+  async _backfillHistoricalTracks() {
+    logger.info('Starting historical track backfill...');
+    const fetch = globalThis.fetch || (await import('node-fetch')).default;
+
+    // Get schedule for the past 9 hours (covers 8.5 hour buffer + margin)
+    const hoursToFetch = 9;
+    const now = Date.now();
+    let totalTracks = 0;
+
+    for (let hoursAgo = 0; hoursAgo < hoursToFetch; hoursAgo++) {
+      try {
+        const targetTime = new Date(now - (hoursAgo * 3600000)).toISOString();
+        const scheduleUrl = `${this.apiBaseUrl}/experience/inline/schedules/${this.stationId}?time=${targetTime}`;
+
+        const scheduleResponse = await fetch(scheduleUrl, {
+          headers: { 'Accept': 'application/json', 'User-Agent': 'encore.fm/1.0' }
+        });
+
+        if (!scheduleResponse.ok) continue;
+
+        const scheduleData = await scheduleResponse.json();
+        const broadcasts = scheduleData?.data?.[0]?.data || [];
+
+        for (const broadcast of broadcasts) {
+          if (broadcast.type !== 'broadcast_summary') continue;
+
+          // Get the playable item's version ID for fetching segments
+          const versionId = broadcast.playable_item?.id;
+          if (!versionId) continue;
+
+          // Skip if broadcast is too old
+          const broadcastEnd = new Date(broadcast.end).getTime();
+          if (broadcastEnd < now - this.retentionDuration) continue;
+
+          // Fetch track segments for this broadcast
+          const segmentsUrl = `${this.apiBaseUrl}/versions/${versionId}/segments?experience=domestic`;
+
+          try {
+            const segmentsResponse = await fetch(segmentsUrl, {
+              headers: { 'Accept': 'application/json', 'User-Agent': 'encore.fm/1.0' }
+            });
+
+            if (!segmentsResponse.ok) continue;
+
+            const segmentsData = await segmentsResponse.json();
+            const segments = segmentsData?.data || [];
+
+            const broadcastStart = new Date(broadcast.start).getTime();
+
+            for (const segment of segments) {
+              if (segment.segment_type !== 'music') continue;
+
+              // Check if we already have this track
+              const existingIndex = this.metadata.findIndex(m => m.data.id === segment.id);
+              if (existingIndex >= 0) continue;
+
+              // Calculate actual broadcast time from broadcast start + offset
+              const trackTime = broadcastStart + ((segment.offset?.start || 0) * 1000);
+
+              // Skip if outside retention window
+              if (trackTime < now - this.retentionDuration) continue;
+
+              const entry = {
+                timestamp: trackTime,
+                storedAt: now,
+                data: {
+                  id: segment.id,
+                  artist: segment.titles?.primary || 'Unknown Artist',
+                  title: segment.titles?.secondary || 'Unknown Track',
+                  imageUrl: this._formatImageUrl(segment.image_url),
+                  isNowPlaying: false,
+                  duration: (segment.offset?.end || 0) - (segment.offset?.start || 0)
+                }
+              };
+
+              this.metadata.push(entry);
+              this.metadataByTime.set(trackTime, entry);
+              totalTracks++;
+            }
+          } catch (segmentError) {
+            // Skip this broadcast's segments on error
+            continue;
+          }
+        }
+      } catch (error) {
+        // Continue with other hours on error
+        continue;
+      }
+    }
+
+    if (totalTracks > 0) {
+      logger.info(`Backfilled ${totalTracks} historical tracks`);
+      this._pruneOldMetadata();
+      this._saveMetadata();
+    } else {
+      logger.info('No new historical tracks to backfill');
+    }
+  }
+
+  /**
    * Get show info for a specific timestamp
    * @param {number} timestamp - The timestamp to find show for
    * @returns {Object|null} The show info or null
@@ -353,15 +467,35 @@ class MetadataService extends EventEmitter {
   getMetadataAt(timestamp, tolerance = 300000) {
     if (this.metadata.length === 0) return null;
 
-    // Find the closest metadata entry
+    // First, try to find a track that is currently playing at this timestamp
+    // (timestamp falls between track start and track end)
+    for (const entry of this.metadata) {
+      const trackStart = entry.timestamp;
+      const trackDuration = (entry.data.duration || 0) * 1000; // duration is in seconds
+      const trackEnd = trackStart + trackDuration;
+
+      if (timestamp >= trackStart && timestamp <= trackEnd) {
+        return entry.data;
+      }
+    }
+
+    // If no exact match, find the closest track within tolerance
+    // but only if the timestamp is BEFORE the track ended
     let closest = null;
     let closestDiff = Infinity;
 
     for (const entry of this.metadata) {
-      const diff = Math.abs(entry.timestamp - timestamp);
-      if (diff < closestDiff && diff <= tolerance) {
-        closest = entry;
-        closestDiff = diff;
+      const trackStart = entry.timestamp;
+      const trackDuration = (entry.data.duration || 0) * 1000;
+      const trackEnd = trackStart + trackDuration;
+
+      // Only consider if timestamp is within or before the track's duration
+      if (timestamp <= trackEnd) {
+        const diff = Math.abs(trackStart - timestamp);
+        if (diff < closestDiff && diff <= tolerance) {
+          closest = entry;
+          closestDiff = diff;
+        }
       }
     }
 

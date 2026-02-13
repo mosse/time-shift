@@ -782,19 +782,43 @@ class HybridBufferService extends EventEmitter {
       // Default segment duration (will be updated from metadata if available)
       const defaultDuration = 6.4; // seconds, typical HLS segment length
 
-      // Calculate timestamps based on sequence numbers
-      // Newest segment gets current time, older segments get earlier timestamps
+      // Calibrate timestamps using the live HLS stream as reference
+      // The live stream's newest sequence number represents "now"
       const now = Date.now();
       const newestSeq = segmentsWithSeq[segmentsWithSeq.length - 1].sequenceNumber;
+
+      // Try to get the live sequence number for accurate calibration
+      let liveSeq = null;
+      try {
+        const fetch = globalThis.fetch || (await import('node-fetch')).default;
+        const livePlaylistUrl = 'http://as-hls-ww-live.akamaized.net/pool_81827798/live/ww/bbc_6music/bbc_6music.isml/bbc_6music-audio%3d96000.norewind.m3u8';
+        const response = await fetch(livePlaylistUrl, { timeout: 5000 });
+        if (response.ok) {
+          const playlist = await response.text();
+          // Extract the highest sequence number from the playlist
+          const matches = playlist.match(/audio=96000-(\d+)\.ts/g) || [];
+          if (matches.length > 0) {
+            const lastMatch = matches[matches.length - 1];
+            liveSeq = parseInt(lastMatch.match(/(\d+)\.ts/)[1], 10);
+            logger.info(`Calibrating buffer timestamps using live sequence: ${liveSeq}`);
+          }
+        }
+      } catch (e) {
+        logger.warn(`Could not fetch live playlist for calibration: ${e.message}`);
+      }
+
+      // Use live sequence as reference (represents "now"), or fall back to our newest
+      const referenceSeq = liveSeq || newestSeq;
+      const referenceTimestamp = now;
 
       for (const { segmentId, sequenceNumber } of segmentsWithSeq) {
         // Check if we have metadata for this segment
         const existingMeta = metadataMap.get(segmentId);
         const duration = existingMeta?.metadata?.duration || defaultDuration;
 
-        // Calculate timestamp: each segment earlier in sequence is ~duration seconds older
-        const seqDiff = newestSeq - sequenceNumber;
-        const timestamp = now - (seqDiff * duration * 1000);
+        // Calculate timestamp based on sequence difference from live reference
+        const seqDiff = referenceSeq - sequenceNumber;
+        const timestamp = referenceTimestamp - (seqDiff * duration * 1000);
 
         // Skip if segment would be outside buffer window
         if (now - timestamp > this.bufferDuration) {

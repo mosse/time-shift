@@ -331,8 +331,8 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 if (currentTrackId !== 'waiting') {
                     currentTrackId = 'waiting';
-                    showWaitingForTrack();
                 }
+                showWaitingForTrack(data.trackAvailableIn);
             }
         } catch (error) {
             // Silently fail - metadata is non-critical
@@ -445,11 +445,27 @@ document.addEventListener('DOMContentLoaded', function() {
 
     /**
      * Show waiting state when no track info is available yet
+     * @param {number|null} availableInSeconds - Seconds until track info becomes available
      */
-    function showWaitingForTrack() {
+    function showWaitingForTrack(availableInSeconds) {
         trackInfo.classList.add('loading', 'no-art');
-        trackTitle.textContent = 'Now Playing';
-        trackArtist.textContent = 'Waiting for track info...';
+        trackTitle.textContent = 'Track Info';
+
+        if (availableInSeconds && availableInSeconds > 0) {
+            const hours = Math.floor(availableInSeconds / 3600);
+            const minutes = Math.floor((availableInSeconds % 3600) / 60);
+
+            let timeStr;
+            if (hours > 0) {
+                timeStr = hours + 'h ' + minutes + 'm';
+            } else {
+                timeStr = minutes + ' min';
+            }
+            trackArtist.textContent = 'Available in ' + timeStr + ' of playback';
+        } else {
+            trackArtist.textContent = 'Waiting for track info...';
+        }
+
         trackArt.src = '';
         trackArt.classList.add('hidden');
     }
