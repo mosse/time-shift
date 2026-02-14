@@ -317,6 +317,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Set up media session for lock screen controls
+    setupMediaSession();
+
     // Check buffer status on load and poll every 30 seconds
     checkBufferStatus();
     statusPollTimer = setInterval(checkBufferStatus, 30000);
@@ -349,11 +352,15 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.track && data.track.title) {
                 if (data.track.id !== currentTrackId) {
                     currentTrackId = data.track.id;
+                    currentTrackStartTime = Date.now();
+                    currentTrackDuration = data.track.duration || null;
                     updateTrackDisplay(data.track);
                 }
             } else {
                 if (currentTrackId !== 'waiting') {
                     currentTrackId = 'waiting';
+                    currentTrackStartTime = null;
+                    currentTrackDuration = null;
                 }
                 showWaitingForTrack(data.trackAvailableIn);
             }
@@ -472,6 +479,54 @@ document.addEventListener('DOMContentLoaded', function() {
             trackArt.classList.add('hidden');
             trackInfo.classList.add('no-art');
         }
+
+        // Update lock screen / media session
+        updateMediaSession(track);
+    }
+
+    /**
+     * Update Media Session for lock screen display
+     */
+    function updateMediaSession(track) {
+        if (!('mediaSession' in navigator)) return;
+
+        const artwork = [];
+        if (track.imageUrl) {
+            artwork.push({ src: track.imageUrl, sizes: '512x512', type: 'image/jpeg' });
+        }
+        // Fallback to show art if no track art
+        if (artwork.length === 0 && showArt && showArt.src) {
+            artwork.push({ src: showArt.src, sizes: '512x512', type: 'image/jpeg' });
+        }
+
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: track.title || 'encore.fm',
+            artist: track.artist || '',
+            album: showTitle ? showTitle.textContent : 'BBC Radio 6 Music',
+            artwork: artwork
+        });
+    }
+
+    /**
+     * Set up Media Session action handlers
+     */
+    function setupMediaSession() {
+        if (!('mediaSession' in navigator)) return;
+
+        navigator.mediaSession.setActionHandler('play', function() {
+            audio.play();
+        });
+
+        navigator.mediaSession.setActionHandler('pause', function() {
+            audio.pause();
+        });
+
+        // Set initial metadata
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: 'encore.fm',
+            artist: 'BBC Radio 6 Music',
+            album: '8 hours delayed'
+        });
     }
 
     /**
@@ -501,6 +556,36 @@ document.addEventListener('DOMContentLoaded', function() {
         trackArt.classList.add('hidden');
     }
 
+    let currentTrackStartTime = null;
+    let currentTrackDuration = null;
+
+    /**
+     * Schedule next metadata fetch based on track duration
+     */
+    function scheduleNextMetadataFetch() {
+        if (metadataPollTimer) {
+            clearTimeout(metadataPollTimer);
+        }
+
+        let delay = 15000; // Default 15 seconds
+
+        // If we know track duration, schedule for when track should end
+        if (currentTrackStartTime && currentTrackDuration) {
+            const elapsed = (Date.now() - currentTrackStartTime) / 1000;
+            const remaining = currentTrackDuration - elapsed;
+
+            if (remaining > 5) {
+                // Poll 3 seconds before track ends, minimum 5 seconds
+                delay = Math.max(5000, (remaining - 3) * 1000);
+            }
+        }
+
+        metadataPollTimer = setTimeout(function() {
+            fetchMetadata();
+            scheduleNextMetadataFetch();
+        }, delay);
+    }
+
     /**
      * Start polling for metadata
      */
@@ -509,10 +594,8 @@ document.addEventListener('DOMContentLoaded', function() {
         showWaitingForTrack();
         // Initial fetch after short delay
         setTimeout(fetchMetadata, 500);
-        // Poll every 30 seconds
-        if (!metadataPollTimer) {
-            metadataPollTimer = setInterval(fetchMetadata, 30000);
-        }
+        // Start scheduled polling
+        scheduleNextMetadataFetch();
     }
 
     /**
@@ -520,7 +603,7 @@ document.addEventListener('DOMContentLoaded', function() {
      */
     function stopMetadataPolling() {
         if (metadataPollTimer) {
-            clearInterval(metadataPollTimer);
+            clearTimeout(metadataPollTimer);
             metadataPollTimer = null;
         }
     }
