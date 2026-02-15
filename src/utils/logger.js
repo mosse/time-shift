@@ -69,7 +69,7 @@ const logger = winston.createLogger({
 
 // Add a daily rotation file transport for production
 if (process.env.NODE_ENV === 'production') {
-  const { DailyRotateFile } = require('winston-daily-rotate-file');
+  const DailyRotateFile = require('winston-daily-rotate-file');
   
   logger.add(new DailyRotateFile({
     filename: path.join(logsDir, 'app-%DATE%.log'),
