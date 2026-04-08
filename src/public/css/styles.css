@@ -156,14 +156,111 @@ main {
   display: block;
 }
 
-.progress-container {
+/* Buffer Grid Visualization */
+.buffer-grid-container {
   width: 100%;
-  max-width: 260px;
+  max-width: 320px;
+  margin: 24px 0;
+}
+
+.buffer-grid-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 0.65rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.buffer-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+  gap: 3px;
+  padding: 2px;
+}
+
+.buffer-block {
+  aspect-ratio: 1;
+  border-radius: 2px;
   background: var(--bg-secondary);
-  border-radius: 3px;
-  height: 3px;
-  overflow: hidden;
-  margin: 20px 0;
+  transition: background-color 0.3s ease, transform 0.15s ease;
+}
+
+.buffer-block:hover {
+  transform: scale(1.15);
+}
+
+.buffer-block.level-0 {
+  background: var(--bg-secondary);
+}
+
+.buffer-block.level-1 {
+  background: rgba(0, 212, 255, 0.2);
+}
+
+.buffer-block.level-2 {
+  background: rgba(0, 212, 255, 0.4);
+}
+
+.buffer-block.level-3 {
+  background: rgba(0, 212, 255, 0.65);
+}
+
+.buffer-block.level-4 {
+  background: var(--accent-cyan);
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
+}
+
+.buffer-block.playback-zone {
+  border: 1px solid var(--accent-pink);
+  box-shadow: 0 0 6px rgba(255, 107, 157, 0.4);
+}
+
+.buffer-grid-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 0.6rem;
+  color: var(--text-tertiary);
+}
+
+.legend-label {
+  margin: 0 2px;
+}
+
+.legend-block {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.legend-block.level-0 {
+  background: var(--bg-secondary);
+}
+
+.legend-block.level-1 {
+  background: rgba(0, 212, 255, 0.2);
+}
+
+.legend-block.level-2 {
+  background: rgba(0, 212, 255, 0.4);
+}
+
+.legend-block.level-3 {
+  background: rgba(0, 212, 255, 0.65);
+}
+
+.legend-block.level-4 {
+  background: var(--accent-cyan);
+}
+
+/* Hide old progress bar, replaced by grid */
+.progress-container {
+  display: none;
 }
 
 .progress-bar {
@@ -581,8 +678,21 @@ footer {
     max-width: 360px;
   }
 
-  .progress-container {
-    max-width: 360px;
+  .buffer-grid-container {
+    max-width: 400px;
+  }
+
+  .buffer-grid {
+    gap: 4px;
+  }
+
+  .buffer-block {
+    border-radius: 3px;
+  }
+
+  .legend-block {
+    width: 12px;
+    height: 12px;
   }
 
   /* Player - horizontal layout */

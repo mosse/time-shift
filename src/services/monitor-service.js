@@ -188,6 +188,7 @@ class MonitorService extends EventEmitter {
           if (this.isRunning) {
             logger.info(`Attempting to restart monitor after ${this.retryDelay}ms delay`);
             this.errorCount = 0;
+            this.isRunning = false;  // Reset flag so startMonitoring() can proceed
             this.startMonitoring({ immediate: true });
           }
         }, this.retryDelay);

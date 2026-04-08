@@ -33,8 +33,21 @@
                     <span id="countdownTime">--:--:--</span>
                     <span class="countdown-label">until ready</span>
                 </div>
-                <div class="progress-container">
-                    <div id="progressBar" class="progress-bar"></div>
+                <div class="buffer-grid-container">
+                    <div class="buffer-grid-header">
+                        <span class="grid-label-left">8h ago</span>
+                        <span class="grid-label-right">now</span>
+                    </div>
+                    <div id="bufferGrid" class="buffer-grid"></div>
+                    <div class="buffer-grid-legend">
+                        <span class="legend-label">Missing</span>
+                        <span class="legend-block level-0"></span>
+                        <span class="legend-block level-1"></span>
+                        <span class="legend-block level-2"></span>
+                        <span class="legend-block level-3"></span>
+                        <span class="legend-block level-4"></span>
+                        <span class="legend-label">Healthy</span>
+                    </div>
                 </div>
                 <p id="bufferStatus" class="buffer-status">Checking buffer status...</p>
             </div>

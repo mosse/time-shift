@@ -85,6 +85,98 @@ router.get('/status', (req, res) => {
 });
 
 /**
+ * @route   GET /api/buffer-grid
+ * @desc    Get buffer data for visualization (GitHub-style contribution grid)
+ * @access  Public
+ */
+router.get('/buffer-grid', (req, res) => {
+  try {
+    const status = serviceManager.getPipelineStatus();
+    const bufferStatus = status.buffer;
+
+    // Get the required buffer duration (8 hours)
+    const requiredBufferMs = config.DELAY_DURATION;
+    const now = Date.now();
+
+    // Calculate the time range we need to cover
+    // We show the full 8-hour window from (now - 8h) to now
+    const windowStart = now - requiredBufferMs;
+    const windowEnd = now;
+
+    // Divide into blocks (each block = 10 minutes = 600000ms)
+    const blockDuration = 600000; // 10 minutes
+    const totalBlocks = Math.ceil(requiredBufferMs / blockDuration); // 48 blocks for 8 hours
+
+    // Build the grid data
+    const blocks = [];
+    const bufferService = serviceManager.bufferService;
+    const segments = bufferService ? bufferService.segments : [];
+
+    // Create a sorted copy for efficient processing
+    const sortedSegments = [...segments].sort((a, b) => a.timestamp - b.timestamp);
+
+    for (let i = 0; i < totalBlocks; i++) {
+      const blockStart = windowStart + (i * blockDuration);
+      const blockEnd = blockStart + blockDuration;
+
+      // Count segments in this block
+      const segmentsInBlock = sortedSegments.filter(
+        s => s.timestamp >= blockStart && s.timestamp < blockEnd
+      ).length;
+
+      // Expected segments per 10-min block (roughly 1 segment per 6.4 seconds = ~94 segments)
+      const expectedSegments = Math.floor(blockDuration / 6400);
+
+      // Calculate fill level (0-4 like GitHub contributions)
+      let level = 0;
+      if (segmentsInBlock > 0) {
+        const fillPercent = (segmentsInBlock / expectedSegments) * 100;
+        if (fillPercent >= 90) level = 4;
+        else if (fillPercent >= 60) level = 3;
+        else if (fillPercent >= 30) level = 2;
+        else level = 1;
+      }
+
+      // Calculate hour offset from "now" for labeling
+      const hoursAgo = Math.floor((now - blockStart) / 3600000);
+
+      blocks.push({
+        index: i,
+        start: blockStart,
+        end: blockEnd,
+        segmentCount: segmentsInBlock,
+        level,
+        hoursAgo,
+        isPlaybackZone: blockStart <= (now - requiredBufferMs + blockDuration) // First block is playback position
+      });
+    }
+
+    // Calculate overall stats
+    const filledBlocks = blocks.filter(b => b.level > 0).length;
+    const fullBlocks = blocks.filter(b => b.level >= 3).length;
+
+    res.json({
+      timestamp: now,
+      windowStart,
+      windowEnd,
+      blockDurationMs: blockDuration,
+      totalBlocks,
+      filledBlocks,
+      fullBlocks,
+      fillPercent: Math.round((filledBlocks / totalBlocks) * 100),
+      blocks,
+      // Include summary stats
+      oldestSegment: bufferStatus.oldestTimestamp,
+      newestSegment: bufferStatus.newestTimestamp,
+      totalSegments: bufferStatus.segmentCount || 0
+    });
+  } catch (error) {
+    logger.error(`Error generating buffer grid: ${error.message}`);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * @route   GET /api/segments
  * @desc    Get list of available segments in buffer
  * @access  Public

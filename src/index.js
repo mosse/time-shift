@@ -41,9 +41,21 @@ async function performHealthCheck() {
     
     // Check monitor service status
     const monitorStatus = status.monitor && typeof status.monitor === 'object' ? status.monitor : {};
-    systemHealth.components.monitor = { 
-      status: monitorStatus.isRunning ? 'healthy' : 'stopped', 
+
+    // Detect zombie state: isRunning but no recent fetches (stale for > 2 minutes)
+    const lastFetchAge = monitorStatus.lastFetchTime ? now - monitorStatus.lastFetchTime : Infinity;
+    const isZombie = monitorStatus.isRunning && lastFetchAge > 120000; // 2 minutes
+
+    let monitorHealthStatus = 'stopped';
+    if (monitorStatus.isRunning) {
+      monitorHealthStatus = isZombie ? 'zombie' : 'healthy';
+    }
+
+    systemHealth.components.monitor = {
+      status: monitorHealthStatus,
       lastCheck: now,
+      lastFetchAge: lastFetchAge === Infinity ? null : lastFetchAge,
+      isZombie,
       details: monitorStatus
     };
     
@@ -80,7 +92,9 @@ async function performHealthCheck() {
     // Check if any component is not healthy (excluding deliberately stopped components)
     const unhealthyComponents = Object.entries(systemHealth.components)
       .filter(([name, info]) => {
-        return info.status !== 'healthy' && 
+        // Unhealthy if: not healthy, not deliberately stopped, or in zombie state
+        if (info.status === 'zombie') return true;
+        return info.status !== 'healthy' &&
                !(info.status === 'stopped' && name === 'monitor');
       });
     

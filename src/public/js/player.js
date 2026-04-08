@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const waitingContainer = document.getElementById('waitingContainer');
     const playerContainer = document.getElementById('playerContainer');
     const countdownTime = document.getElementById('countdownTime');
-    const progressBar = document.getElementById('progressBar');
+    const bufferGrid = document.getElementById('bufferGrid');
     const bufferStatus = document.getElementById('bufferStatus');
 
     // Track info elements
@@ -42,6 +42,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const maxReconnectAttempts = 5;
     let statusPollTimer = null;
     let countdownTimer = null;
+    let gridPollTimer = null;
     let bufferReady = false;
     let secondsRemaining = 0;
     let currentBufferSecs = 0;
@@ -250,10 +251,52 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateCountdownDisplay() {
-        const percent = Math.min(100, (currentBufferSecs / requiredBufferSecs) * 100);
         countdownTime.textContent = formatTime(secondsRemaining);
-        progressBar.style.width = percent.toFixed(1) + '%';
         bufferStatus.textContent = formatTime(currentBufferSecs) + ' of ' + formatTime(requiredBufferSecs) + ' buffered';
+    }
+
+    /**
+     * Render the buffer grid visualization
+     * @param {Array} blocks - Array of block data from API
+     */
+    function renderBufferGrid(blocks) {
+        if (!bufferGrid || !blocks) return;
+
+        // Clear existing blocks
+        bufferGrid.innerHTML = '';
+
+        // Render each block
+        blocks.forEach(function(block) {
+            var div = document.createElement('div');
+            div.className = 'buffer-block level-' + block.level;
+            if (block.isPlaybackZone && block.level > 0) {
+                div.classList.add('playback-zone');
+            }
+
+            // Add tooltip with details
+            var hoursAgo = block.hoursAgo;
+            var minsInHour = Math.floor(((block.index % 6) * 10));
+            var timeLabel = hoursAgo + 'h ' + minsInHour + 'm ago';
+            div.title = timeLabel + ' - ' + block.segmentCount + ' segments';
+
+            bufferGrid.appendChild(div);
+        });
+    }
+
+    /**
+     * Fetch buffer grid data from API
+     */
+    async function fetchBufferGrid() {
+        try {
+            var response = await fetch('/api/buffer-grid');
+            var data = await response.json();
+
+            if (data.blocks) {
+                renderBufferGrid(data.blocks);
+            }
+        } catch (error) {
+            console.debug('Buffer grid fetch failed:', error.message);
+        }
     }
 
     function tickCountdown() {
@@ -279,6 +322,10 @@ document.addEventListener('DOMContentLoaded', function() {
             clearInterval(countdownTimer);
             countdownTimer = null;
         }
+        if (gridPollTimer) {
+            clearInterval(gridPollTimer);
+            gridPollTimer = null;
+        }
         waitingContainer.style.display = 'none';
         playerContainer.style.display = 'flex';
         bufferReady = true;
@@ -291,6 +338,10 @@ document.addEventListener('DOMContentLoaded', function() {
         playerContainer.style.display = 'none';
         if (!countdownTimer) {
             countdownTimer = setInterval(tickCountdown, 1000);
+        }
+        // Poll grid every 10 seconds for visual updates
+        if (!gridPollTimer) {
+            gridPollTimer = setInterval(fetchBufferGrid, 10000);
         }
     }
 
@@ -310,6 +361,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     showPlayer();
                 } else {
                     showWaiting();
+                    // Fetch grid visualization
+                    fetchBufferGrid();
                 }
             }
         } catch (error) {
@@ -322,6 +375,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Check buffer status on load and poll every 30 seconds
     checkBufferStatus();
+    fetchBufferGrid(); // Initial grid fetch
     statusPollTimer = setInterval(checkBufferStatus, 30000);
 
     /**
