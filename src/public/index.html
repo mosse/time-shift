@@ -70,6 +70,25 @@
                             <span id="connectionIndicator" class="indicator"></span>
                             <span id="connectionStatus">Idle</span>
                         </div>
+                        <button id="healthToggle" class="health-toggle" aria-label="Stream health details" aria-expanded="false">
+                            <span id="healthDot" class="health-dot"></span>
+                            <span id="healthLabel" class="health-label">Health</span>
+                        </button>
+                    </div>
+
+                    <div id="healthPanel" class="health-panel" hidden>
+                        <p id="healthRecorder" class="health-line">Recorder: checking…</p>
+                        <p id="healthContinuity" class="health-line">Continuity: checking…</p>
+                        <div class="buffer-grid-container health-grid-container">
+                            <div class="buffer-grid-header">
+                                <span class="grid-label-left">8h ago</span>
+                                <span class="grid-label-right">now</span>
+                            </div>
+                            <div id="healthGrid" class="buffer-grid"></div>
+                        </div>
+                        <p id="healthDownloads" class="health-line health-line-small"></p>
+                        <div class="disk-bar" aria-hidden="true"><div id="diskBarFill" class="disk-bar-fill"></div></div>
+                        <p id="healthDisk" class="health-line health-line-small"></p>
                     </div>
 
                     <div id="trackInfo" class="track-info">

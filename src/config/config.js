@@ -67,14 +67,19 @@ module.exports = {
   getStreamUrl,
 
   // Stream URLs - BBC 6 Music streams (legacy, for backwards compatibility)
+  // STREAM_URL env var overrides the default (as documented in the README)
   STREAM_URLS: {
-    AKAMAI: getStreamUrl(DEFAULT_STATION).akamaiNorewind,
+    AKAMAI: process.env.STREAM_URL || getStreamUrl(DEFAULT_STATION).akamaiNorewind,
     CLOUDFRONT: 'http://as-hls-ww.live.cf.md.bbci.co.uk/pool_81827798/live/ww/bbc_6music/bbc_6music.isml/bbc_6music-audio%3d96000.norewind.m3u8'
   },
-  
-  // Time settings (in milliseconds)
-  BUFFER_DURATION: 8.5 * 60 * 60 * 1000, // 8.5 hours
-  DELAY_DURATION: 8 * 60 * 60 * 1000,    // 8 hours
+
+  // Time settings (in milliseconds) - env-overridable as documented
+  BUFFER_DURATION: parseInt(process.env.BUFFER_DURATION, 10) || 8.5 * 60 * 60 * 1000, // 8.5 hours
+  DELAY_DURATION: parseInt(process.env.DELAY_DURATION, 10) || 8 * 60 * 60 * 1000,     // 8 hours
+
+  // How far the capture lags the actual broadcast (HLS live-edge latency).
+  // Used to align track metadata with what the listener actually hears.
+  CAPTURE_LATENCY: parseInt(process.env.CAPTURE_LATENCY, 10) || 30000, // 30 seconds
   
   // Server settings
   PORT: process.env.PORT || 3000,
@@ -106,6 +111,10 @@ module.exports = {
     MAX_WRITE_RETRIES: 3,
     WRITE_RETRY_DELAY: 500, // milliseconds
     CLEANUP_INTERVAL: 60000, // 1 minute
-    USE_DISK_STORAGE: true
+    USE_DISK_STORAGE: true,
+    // Storage pressure limits: refuse/evict instead of crashing on ENOSPC
+    MAX_STORAGE_BYTES: parseInt(process.env.MAX_STORAGE_BYTES, 10) || 2 * 1024 * 1024 * 1024, // 2 GB
+    MIN_FREE_BYTES: parseInt(process.env.MIN_FREE_BYTES, 10) || 500 * 1024 * 1024, // 500 MB
+    CAPACITY_CHECK_INTERVAL: 60000 // 1 minute
   }
 }; 

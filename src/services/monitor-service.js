@@ -21,11 +21,14 @@ class MonitorService extends EventEmitter {
     // State
     this.isRunning = false;
     this.intervalId = null;
-    this.knownSegments = new Set(); // Track known segment URLs
+    this.knownSegments = new Set(); // Track known segment URLs (bounded, insertion-ordered)
+    this.maxKnownSegments = options.maxKnownSegments || 300; // live window is ~6 URLs; 300 is generous
     this.lastSequence = -1; // Track the last sequence number
     this.errorCount = 0;
     this.lastFetchTime = null;
+    this.lastSuccessfulFetchTime = null;
     this.activeFetch = null; // For tracking in-progress fetches
+    this.currentRetryDelay = this.retryDelay; // Grows exponentially across failed recovery cycles
     
     // Bind methods to preserve 'this' context
     this.fetchPlaylist = this.fetchPlaylist.bind(this);
@@ -138,8 +141,10 @@ class MonitorService extends EventEmitter {
       // Process new segments
       const newSegments = this.identifyNewSegments(segmentUrls, parsedPlaylist);
       
-      // Reset error count on success
+      // Reset error count and recovery backoff on success
       this.errorCount = 0;
+      this.currentRetryDelay = this.retryDelay;
+      this.lastSuccessfulFetchTime = Date.now();
       
       const result = {
         success: true,
@@ -170,28 +175,32 @@ class MonitorService extends EventEmitter {
       // Emit 'error' event
       this.emit('error', errorInfo);
       
-      // If too many consecutive errors, stop monitoring or retry with delay
+      // If too many consecutive errors, pause and retry with exponential backoff
       if (this.errorCount >= this.maxConsecutiveErrors) {
-        logger.error(`Max consecutive errors (${this.maxConsecutiveErrors}) reached, pausing monitor`);
-        
+        const pauseDelay = this.currentRetryDelay;
+        logger.error(`Max consecutive errors (${this.maxConsecutiveErrors}) reached, pausing monitor for ${pauseDelay}ms`);
+
         // Clear current interval
         if (this.intervalId) {
           clearInterval(this.intervalId);
           this.intervalId = null;
         }
-        
+
         // Emit 'maxErrorsReached' event
-        this.emit('maxErrorsReached', { errorCount: this.errorCount });
-        
+        this.emit('maxErrorsReached', { errorCount: this.errorCount, retryDelay: pauseDelay });
+
+        // Back off: double the pause for each failed recovery cycle, cap at 5 minutes
+        this.currentRetryDelay = Math.min(this.currentRetryDelay * 2, 5 * 60 * 1000);
+
         // Attempt to restart after delay
         setTimeout(() => {
           if (this.isRunning) {
-            logger.info(`Attempting to restart monitor after ${this.retryDelay}ms delay`);
+            logger.info(`Attempting to restart monitor after ${pauseDelay}ms delay`);
             this.errorCount = 0;
             this.isRunning = false;  // Reset flag so startMonitoring() can proceed
             this.startMonitoring({ immediate: true });
           }
-        }, this.retryDelay);
+        }, pauseDelay);
       }
       
       return errorInfo;
@@ -262,10 +271,20 @@ class MonitorService extends EventEmitter {
         segments: newSegments,
         count: newSegments.length
       });
-      
+
       logger.info(`Found ${newSegments.length} new segments`);
     }
-    
+
+    // Keep the known-segments set bounded (it only needs to cover the live
+    // playlist window; unbounded growth is a slow memory leak)
+    if (this.knownSegments.size > this.maxKnownSegments) {
+      const excess = this.knownSegments.size - this.maxKnownSegments;
+      const iterator = this.knownSegments.values();
+      for (let i = 0; i < excess; i++) {
+        this.knownSegments.delete(iterator.next().value);
+      }
+    }
+
     return newSegments;
   }
   

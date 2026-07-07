@@ -27,6 +27,7 @@ class ServiceManager {
     
     this.isRunning = false;
     this.servicesInitialized = false;
+    this.servicesConnected = false;
     
     logger.info('Service manager initialized with options:', this.options);
   }
@@ -67,7 +68,14 @@ class ServiceManager {
     if (!this.servicesInitialized) {
       throw new Error('Services must be initialized before connecting');
     }
-    
+
+    // Restarting the pipeline (e.g. POST /api/restart) must not stack a
+    // second set of listeners on the singletons
+    if (this.servicesConnected) {
+      logger.debug('Services already connected, skipping duplicate wiring');
+      return;
+    }
+
     logger.info('Connecting services...');
     
     // Monitor -> Downloader: When new segments are found, download them
@@ -98,12 +106,22 @@ class ServiceManager {
     // Downloader -> Buffer: Already connected through initialization
     
     // Monitor -> Service Manager: Propagate important events
-    monitorService.on('error', (error) => {
-      logger.error(`Pipeline: Monitor error: ${error.message}`);
+    monitorService.on('error', (errorInfo) => {
+      logger.error(`Pipeline: Monitor error: ${errorInfo.error || errorInfo.message || 'unknown'}`);
     });
-    
+
     monitorService.on('discontinuity', (info) => {
       logger.warn(`Pipeline: Stream discontinuity detected, ${info.skippedCount} segments skipped`);
+
+      // Record the hole as first-class gap data (~6.4s per skipped segment)
+      const now = Date.now();
+      hybridBufferService.recordGap({
+        fromSeq: info.expected,
+        toSeq: info.actual - 1,
+        startTime: now - info.skippedCount * 6400,
+        endTime: now,
+        reason: 'discontinuity'
+      });
     });
     
     monitorService.on('maxErrorsReached', () => {
@@ -116,8 +134,22 @@ class ServiceManager {
       logger.debug(`Pipeline: Download success: ${result.url} (${result.size} bytes)`);
     });
     
-    downloaderService.on('downloadFailure', (error) => {
-      logger.error(`Pipeline: Download failure: ${error.url} - ${error.errorMessage}`);
+    downloaderService.on('downloadFailure', (failure) => {
+      logger.error(`Pipeline: Download failure: ${failure.url} - ${failure.message || failure.errorMessage}`);
+
+      // A permanently failed segment is a (small) hole in the recording
+      const seq = failure.metadata?.sequenceNumber;
+      if (Number.isFinite(seq)) {
+        const duration = (failure.metadata?.duration || 6.4) * 1000;
+        const now = Date.now();
+        hybridBufferService.recordGap({
+          fromSeq: seq,
+          toSeq: seq,
+          startTime: now - duration,
+          endTime: now,
+          reason: 'download-failure'
+        });
+      }
     });
     
     downloaderService.on('downloadComplete', (stats) => {
@@ -136,7 +168,12 @@ class ServiceManager {
     hybridBufferService.on('bufferFull', () => {
       logger.warn('Pipeline: Buffer reached capacity');
     });
-    
+
+    hybridBufferService.on('storagePressure', (capacity) => {
+      logger.warn('Pipeline: Storage pressure reported by buffer service', capacity || {});
+    });
+
+    this.servicesConnected = true;
     logger.info('All services connected successfully');
   }
   
@@ -213,12 +250,31 @@ class ServiceManager {
         logger.warn(`Error stopping metadata service: ${e.message}`);
       }
       
-      // Remove event listeners to prevent memory leaks
-      monitorService.removeAllListeners('newSegment');
-      
-      // Wait for any pending downloads to complete
-      await downloaderService.finishPendingDownloads();
-      
+      // Note: listeners wired in connectServices() are intentionally kept -
+      // wiring is one-time (guarded by servicesConnected) so a pipeline
+      // restart reuses them instead of stacking duplicates
+
+      // Wait for any pending downloads to complete, but never let a stuck
+      // download hold up shutdown past the forced-exit window
+      await Promise.race([
+        downloaderService.finishPendingDownloads(),
+        new Promise(resolve => {
+          const timer = setTimeout(() => {
+            logger.warn('Timed out waiting for pending downloads during shutdown');
+            resolve();
+          }, 8000);
+          timer.unref();
+        })
+      ]);
+
+      // Persist buffer metadata so a restart restores the full buffer
+      try {
+        hybridBufferService.stopIntervals();
+        await hybridBufferService.flushMetadata();
+      } catch (e) {
+        logger.warn(`Error flushing buffer metadata on shutdown: ${e.message}`);
+      }
+
       this.isRunning = false;
       logger.info('Acquisition pipeline stopped successfully');
       
@@ -229,6 +285,33 @@ class ServiceManager {
     }
   }
   
+  /**
+   * Restart just the monitor loop (self-heal for zombie/stuck states)
+   * Much cheaper than a full pipeline restart: listeners, buffer and
+   * downloader state are all preserved
+   * @returns {Promise<boolean>} - True if the monitor restarted
+   */
+  async restartMonitor() {
+    logger.warn('Restarting monitor service (self-heal)');
+
+    try {
+      monitorService.stopMonitoring();
+    } catch (error) {
+      logger.warn(`Error stopping monitor during self-heal: ${error.message}`);
+    }
+
+    monitorService.errorCount = 0;
+    const started = monitorService.startMonitoring({ immediate: true });
+
+    if (started) {
+      logger.info('Monitor service restarted successfully');
+    } else {
+      logger.error('Monitor service failed to restart during self-heal');
+    }
+
+    return started;
+  }
+
   /**
    * Start metadata service independently
    * Failures here should never impact the main pipeline
@@ -259,12 +342,21 @@ class ServiceManager {
       // Ignore metadata errors
     }
 
+    let capacity = null;
+    try {
+      const { diskStorageService } = require('./disk-storage-service');
+      capacity = diskStorageService.getLastCapacity();
+    } catch (e) {
+      // Capacity info is best-effort
+    }
+
     return {
       isRunning: this.isRunning,
       monitor: monitorService.getStatus(),
       downloader: downloaderService.getStats(),
       buffer: hybridBufferService.getBufferStats(),
-      metadata: metadataStats
+      metadata: metadataStats,
+      capacity
     };
   }
   

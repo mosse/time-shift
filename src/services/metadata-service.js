@@ -102,11 +102,10 @@ class MetadataService extends EventEmitter {
    * @private
    */
   async _poll() {
-    // Fetch tracks and schedule in parallel
-    await Promise.all([
-      this._pollTracks(),
-      this._pollSchedule()
-    ]);
+    // Schedule first: track timestamps anchor to the show's broadcast
+    // start, so it must be loaded before tracks are processed
+    await this._pollSchedule();
+    await this._pollTracks();
   }
 
   /**
@@ -162,17 +161,35 @@ class MetadataService extends EventEmitter {
     const now = Date.now();
     let newItems = 0;
 
-    // Find the maximum offset (most recent track's end time in programme)
-    // This represents "now" in programme time
+    // Preferred anchor: segment offsets are relative to the programme's
+    // broadcast start, which the schedule poll gives us exactly. The old
+    // heuristic (assume the newest track's END offset is "now") shifted
+    // every track earlier by however much of the current track remained.
+    const currentShow = this.shows.find(s => now >= s.start && now <= s.end);
+
+    // Fallback anchor when no schedule data covers now
     const maxOffset = Math.max(...response.data.map(item => item.offset?.end || item.offset?.start || 0));
 
     for (const item of response.data) {
       if (item.segment_type !== 'music') continue;
 
-      // Calculate broadcast time: how many seconds ago did this track start?
-      // maxOffset is current position in programme, item.offset.start is when track began
-      const secondsAgo = maxOffset - (item.offset?.start || 0);
-      const broadcastTime = now - (secondsAgo * 1000);
+      let broadcastTime = null;
+
+      if (currentShow && Number.isFinite(item.offset?.start)) {
+        const candidate = currentShow.start + item.offset.start * 1000;
+        // Sanity: a track anchored to the current show must start within it
+        // and not in the future (items from a previous show carry offsets
+        // relative to THAT show, so they'd fail this check)
+        if (candidate <= now && candidate <= currentShow.end) {
+          broadcastTime = candidate;
+        }
+      }
+
+      if (broadcastTime === null) {
+        // Heuristic fallback: how many seconds ago did this track start?
+        const secondsAgo = maxOffset - (item.offset?.start || 0);
+        broadcastTime = now - (secondsAgo * 1000);
+      }
 
       // Check if we already have this item (by ID)
       const existingIndex = this.metadata.findIndex(m => m.data.id === item.id);
@@ -188,6 +205,7 @@ class MetadataService extends EventEmitter {
           title: item.titles?.secondary || 'Unknown Track',
           imageUrl: this._formatImageUrl(item.image_url),
           isNowPlaying: item.offset?.now_playing || false,
+          startedAt: broadcastTime,
           duration: item.offset?.end - item.offset?.start || 0
         }
       };
@@ -385,6 +403,7 @@ class MetadataService extends EventEmitter {
                   title: segment.titles?.secondary || 'Unknown Track',
                   imageUrl: this._formatImageUrl(segment.image_url),
                   isNowPlaying: false,
+                  startedAt: trackTime,
                   duration: (segment.offset?.end || 0) - (segment.offset?.start || 0)
                 }
               };
@@ -500,6 +519,21 @@ class MetadataService extends EventEmitter {
     }
 
     return closest?.data || null;
+  }
+
+  /**
+   * Get the first track starting after a given timestamp
+   * @param {number} timestamp - Reference timestamp
+   * @returns {Object|null} - The next track's data or null
+   */
+  getNextTrackAfter(timestamp) {
+    let next = null;
+    for (const entry of this.metadata) {
+      if (entry.timestamp > timestamp && (!next || entry.timestamp < next.timestamp)) {
+        next = entry;
+      }
+    }
+    return next?.data || null;
   }
 
   /**

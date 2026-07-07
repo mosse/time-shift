@@ -15,10 +15,29 @@ const systemHealth = {
     buffer: { status: 'unknown', lastCheck: null },
     monitor: { status: 'unknown', lastCheck: null },
     downloader: { status: 'unknown', lastCheck: null },
-    playlist: { status: 'unknown', lastCheck: null }
+    playlist: { status: 'unknown', lastCheck: null },
+    disk: { status: 'unknown', lastCheck: null }
   },
-  errors: []
+  errors: [],
+  selfHeal: { lastAttempt: null, attempts: 0 }
 };
+
+// Health thresholds
+const HEALTH_THRESHOLDS = {
+  ZOMBIE_MS: 2 * 60 * 1000,        // monitor claims running but no fetch attempts
+  STALE_BUFFER_MS: 3 * 60 * 1000,  // no new segments while pipeline is running
+  EMPTY_BUFFER_GRACE_MS: 5 * 60 * 1000, // startup grace before an empty buffer is unhealthy
+  MIN_WINDOW_DOWNLOADS: 5,          // min downloads between checks to judge success rate
+  SELF_HEAL_COOLDOWN_MS: 5 * 60 * 1000,
+  MAX_ZOMBIE_CHECKS_BEFORE_EXIT: 5  // consecutive zombie checks (with failed self-heal) before exiting
+};
+
+const serverStartTime = Date.now();
+
+// Windowed downloader stats: compare totals between health checks so one
+// bad hour doesn't poison a lifetime success rate (and vice versa)
+let lastDownloaderSnapshot = null;
+let consecutiveZombieChecks = 0;
 
 /**
  * Perform health check on all system components
@@ -42,9 +61,12 @@ async function performHealthCheck() {
     // Check monitor service status
     const monitorStatus = status.monitor && typeof status.monitor === 'object' ? status.monitor : {};
 
-    // Detect zombie state: isRunning but no recent fetches (stale for > 2 minutes)
+    // Detect zombie state: isRunning but no recent fetch attempts.
+    // Note lastFetchTime updates even on FAILED fetches, so a zombie means
+    // the fetch loop itself has stopped ticking (process-local fault),
+    // not that the upstream is down.
     const lastFetchAge = monitorStatus.lastFetchTime ? now - monitorStatus.lastFetchTime : Infinity;
-    const isZombie = monitorStatus.isRunning && lastFetchAge > 120000; // 2 minutes
+    const isZombie = monitorStatus.isRunning && lastFetchAge > HEALTH_THRESHOLDS.ZOMBIE_MS;
 
     let monitorHealthStatus = 'stopped';
     if (monitorStatus.isRunning) {
@@ -58,21 +80,62 @@ async function performHealthCheck() {
       isZombie,
       details: monitorStatus
     };
-    
-    // Check downloader service status
+
+    // Check downloader service status via windowed success rate
     const downloaderStatus = status.downloader && typeof status.downloader === 'object' ? status.downloader : {};
-    systemHealth.components.downloader = { 
-      status: 'healthy', 
+    const downloaderTotals = {
+      total: downloaderStatus.totalDownloads || 0,
+      success: downloaderStatus.successfulDownloads || 0
+    };
+    let downloaderHealthStatus = 'healthy';
+    let windowedSuccessRate = null;
+    if (lastDownloaderSnapshot) {
+      const windowTotal = downloaderTotals.total - lastDownloaderSnapshot.total;
+      const windowSuccess = downloaderTotals.success - lastDownloaderSnapshot.success;
+      if (windowTotal >= HEALTH_THRESHOLDS.MIN_WINDOW_DOWNLOADS) {
+        windowedSuccessRate = Math.round((windowSuccess / windowTotal) * 100);
+        if (windowedSuccessRate < 50) {
+          downloaderHealthStatus = 'degraded';
+        }
+      }
+    }
+    lastDownloaderSnapshot = downloaderTotals;
+
+    systemHealth.components.downloader = {
+      status: downloaderHealthStatus,
       lastCheck: now,
+      windowedSuccessRate,
       details: downloaderStatus
     };
-    
-    // Check buffer service status
+
+    // Check buffer service status: the recorder is stale if no new segment
+    // has landed recently while the pipeline claims to be running
     const bufferStatus = status.buffer && typeof status.buffer === 'object' ? status.buffer : {};
-    systemHealth.components.buffer = { 
-      status: 'healthy', 
+    const newestTimestamp = bufferStatus.newestTimestamp || null;
+    const newestSegmentAge = newestTimestamp ? now - newestTimestamp : null;
+    let bufferStale = false;
+    if (status.isRunning) {
+      if (newestSegmentAge !== null) {
+        bufferStale = newestSegmentAge > HEALTH_THRESHOLDS.STALE_BUFFER_MS;
+      } else {
+        // Empty buffer: allow a startup grace period before flagging
+        bufferStale = now - serverStartTime > HEALTH_THRESHOLDS.EMPTY_BUFFER_GRACE_MS;
+      }
+    }
+
+    systemHealth.components.buffer = {
+      status: bufferStale ? 'stale' : 'healthy',
       lastCheck: now,
+      newestSegmentAge,
       details: bufferStatus
+    };
+
+    // Check disk capacity (populated by the storage guard)
+    const capacity = status.capacity || null;
+    systemHealth.components.disk = {
+      status: capacity ? (capacity.ok ? 'healthy' : 'pressure') : 'unknown',
+      lastCheck: now,
+      details: capacity
     };
     
     // Check playlist service status - consider it healthy if we can access the app's playlistGenerator
@@ -89,30 +152,64 @@ async function performHealthCheck() {
       }
     };
     
-    // Check if any component is not healthy (excluding deliberately stopped components)
+    // Check if any component is not healthy. 'unknown' (not yet measured)
+    // and a deliberately stopped monitor don't count against health.
     const unhealthyComponents = Object.entries(systemHealth.components)
       .filter(([name, info]) => {
-        // Unhealthy if: not healthy, not deliberately stopped, or in zombie state
-        if (info.status === 'zombie') return true;
-        return info.status !== 'healthy' &&
-               !(info.status === 'stopped' && name === 'monitor');
+        if (info.status === 'healthy' || info.status === 'unknown') return false;
+        if (info.status === 'stopped' && name === 'monitor') return false;
+        return true;
       });
-    
+
     // Set overall health status
     systemHealth.isHealthy = unhealthyComponents.length === 0;
-    
+
     if (unhealthyComponents.length > 0) {
-      unhealthyComponents.forEach(([name]) => {
-        systemHealth.errors.push(`${name} service is not healthy`);
+      unhealthyComponents.forEach(([name, info]) => {
+        systemHealth.errors.push(`${name} service is not healthy (${info.status})`);
       });
     }
-    
-    logger.debug('Health check completed', { 
-      isHealthy: systemHealth.isHealthy, 
-      components: Object.keys(systemHealth.components).map(k => 
+
+    // Self-heal: a zombie monitor or stale recorder can often be fixed by
+    // restarting the monitor loop. Attempt at most once per cooldown.
+    const recorderSick = isZombie || (bufferStale && monitorStatus.isRunning);
+    if (recorderSick) {
+      const lastAttempt = systemHealth.selfHeal.lastAttempt || 0;
+      if (now - lastAttempt > HEALTH_THRESHOLDS.SELF_HEAL_COOLDOWN_MS) {
+        systemHealth.selfHeal.lastAttempt = now;
+        systemHealth.selfHeal.attempts++;
+        logger.warn('Health check: recorder appears stuck, restarting monitor (self-heal)');
+        serviceManager.restartMonitor().catch(err => {
+          logger.error(`Self-heal monitor restart failed: ${err.message}`);
+        });
+      }
+    }
+
+    // Exit escalation: ONLY for the zombie state. A zombie means our own
+    // fetch loop died (process-local fault a restart will fix). Upstream
+    // outages (fetch errors, stale buffer with a live fetch loop) must NOT
+    // kill the process - it can still serve the buffered audio.
+    if (isZombie) {
+      consecutiveZombieChecks++;
+      if (consecutiveZombieChecks >= HEALTH_THRESHOLDS.MAX_ZOMBIE_CHECKS_BEFORE_EXIT) {
+        logger.error(`Monitor zombie for ${consecutiveZombieChecks} consecutive checks and self-heal failed; exiting so the container restarts clean`);
+        try {
+          await serviceManager.stopPipeline();
+        } catch (e) {
+          logger.error(`Pipeline stop during zombie exit failed: ${e.message}`);
+        }
+        process.exit(1);
+      }
+    } else {
+      consecutiveZombieChecks = 0;
+    }
+
+    logger.debug('Health check completed', {
+      isHealthy: systemHealth.isHealthy,
+      components: Object.keys(systemHealth.components).map(k =>
         `${k}: ${systemHealth.components[k].status}`)
     });
-    
+
     return systemHealth;
   } catch (error) {
     systemHealth.isHealthy = false;
@@ -174,15 +271,24 @@ async function startServer() {
   
   // Handle uncaught exceptions and unhandled rejections
   process.on('uncaughtException', (error) => {
+    // Socket-level errors from disconnecting clients (or a closed log pipe)
+    // are not fatal - shutting down over them killed the app 42 times in
+    // production. Log and keep serving.
+    if (error.code === 'EPIPE' || error.code === 'ECONNRESET') {
+      logger.warn(`Ignoring non-fatal socket error: ${error.code} - ${error.message}`);
+      return;
+    }
+
     logger.error(`Uncaught exception: ${error.message}`, { stack: error.stack });
     shutdownHandler('uncaughtException').catch(err => {
       logger.error(`Error during shutdown: ${err.message}`);
       process.exit(1);
     });
   });
-  
+
   process.on('unhandledRejection', (reason, promise) => {
-    logger.error(`Unhandled rejection at: ${promise}, reason: ${reason}`);
+    const stack = reason instanceof Error ? reason.stack : undefined;
+    logger.error(`Unhandled rejection: ${reason instanceof Error ? reason.message : reason}`, { stack });
   });
 
   // Initialize and start the acquisition pipeline

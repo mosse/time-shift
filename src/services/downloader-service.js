@@ -39,6 +39,7 @@ class DownloaderService extends EventEmitter {
         client: 0,
         timeout: 0,
         content: 0,
+        storage: 0,
         unknown: 0
       }
     };
@@ -86,6 +87,7 @@ class DownloaderService extends EventEmitter {
         client: 0,
         timeout: 0,
         content: 0,
+        storage: 0,
         unknown: 0
       }
     };
@@ -413,6 +415,11 @@ class DownloaderService extends EventEmitter {
    * @private
    */
   _isRetryableError(error) {
+    // Local storage exhaustion: re-downloading won't create disk space
+    if (error.code === 'STORAGE_FULL') {
+      return false;
+    }
+
     // Network errors are generally retryable
     if (!error.response) {
       return true;
@@ -446,6 +453,10 @@ class DownloaderService extends EventEmitter {
    * @private
    */
   _categorizeError(error) {
+    if (error.code === 'STORAGE_FULL') {
+      return 'storage';
+    }
+
     if (!error.response) {
       // Network error, connection problem
       return 'network';

@@ -554,6 +554,115 @@ audio {
   50% { opacity: 1; }
 }
 
+/* Stream health toggle + panel */
+.player-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.health-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+  transition: background-color 0.2s ease;
+}
+
+.health-toggle:hover,
+.health-toggle:focus-visible {
+  background-color: var(--bg-secondary);
+}
+
+.health-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--text-tertiary);
+  transition: all 0.2s ease;
+}
+
+.health-dot.good {
+  background-color: var(--accent-green);
+  box-shadow: 0 0 6px var(--accent-green);
+}
+
+.health-dot.degraded {
+  background-color: var(--accent-yellow);
+  box-shadow: 0 0 6px var(--accent-yellow);
+}
+
+.health-dot.bad {
+  background-color: var(--accent-pink);
+  box-shadow: 0 0 6px var(--accent-pink);
+  animation: pulse 1s infinite;
+}
+
+.health-panel {
+  background-color: var(--bg-elevated);
+  border-radius: 14px;
+  padding: 14px;
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.health-panel[hidden] {
+  display: none;
+}
+
+.health-line {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.health-line-small {
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+}
+
+.health-grid-container {
+  margin: 4px 0;
+}
+
+/* A recording gap: diagonal stripes so it can't be mistaken for the
+   playback-zone outline or a low fill level */
+.buffer-block.gap-block {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 107, 157, 0.7) 0 2px,
+    rgba(255, 107, 157, 0.12) 2px 5px
+  );
+}
+
+.disk-bar {
+  height: 4px;
+  border-radius: 2px;
+  background-color: var(--bg-tertiary);
+  overflow: hidden;
+}
+
+.disk-bar-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 2px;
+  background-color: var(--accent-cyan);
+  transition: width 0.4s ease;
+}
+
+.disk-bar-fill.pressure {
+  background-color: var(--accent-pink);
+}
+
 footer {
   display: none;
 }

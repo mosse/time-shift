@@ -6,9 +6,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install --production
 
-# Copy application code
+# Copy application code (tests are not needed in the production image)
 COPY src/ ./src/
-COPY test/ ./test/
 
 # Create data directory
 RUN mkdir -p /app/data/segments

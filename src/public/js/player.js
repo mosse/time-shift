@@ -134,6 +134,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (Hls.isSupported()) {
             hls = new Hls(hlsConfig);
+            window.encoreHls = hls; // exposed for debugging
 
             hls.on(Hls.Events.MANIFEST_PARSED, function() {
                 setConnection('Connected');
@@ -258,12 +259,14 @@ document.addEventListener('DOMContentLoaded', function() {
     /**
      * Render the buffer grid visualization
      * @param {Array} blocks - Array of block data from API
+     * @param {Element} [targetEl] - Grid container (defaults to the waiting-screen grid)
      */
-    function renderBufferGrid(blocks) {
-        if (!bufferGrid || !blocks) return;
+    function renderBufferGrid(blocks, targetEl) {
+        var grid = targetEl || bufferGrid;
+        if (!grid || !blocks) return;
 
         // Clear existing blocks
-        bufferGrid.innerHTML = '';
+        grid.innerHTML = '';
 
         // Render each block
         blocks.forEach(function(block) {
@@ -272,27 +275,32 @@ document.addEventListener('DOMContentLoaded', function() {
             if (block.isPlaybackZone && block.level > 0) {
                 div.classList.add('playback-zone');
             }
+            if (block.hasGap) {
+                div.classList.add('gap-block');
+            }
 
             // Add tooltip with details
             var hoursAgo = block.hoursAgo;
             var minsInHour = Math.floor(((block.index % 6) * 10));
             var timeLabel = hoursAgo + 'h ' + minsInHour + 'm ago';
-            div.title = timeLabel + ' - ' + block.segmentCount + ' segments';
+            div.title = timeLabel + ' - ' + block.segmentCount + ' segments' +
+                (block.hasGap ? ' - recording gap' : '');
 
-            bufferGrid.appendChild(div);
+            grid.appendChild(div);
         });
     }
 
     /**
      * Fetch buffer grid data from API
+     * @param {Element} [targetEl] - Grid container to render into
      */
-    async function fetchBufferGrid() {
+    async function fetchBufferGrid(targetEl) {
         try {
             var response = await fetch('/api/buffer-grid');
             var data = await response.json();
 
             if (data.blocks) {
-                renderBufferGrid(data.blocks);
+                renderBufferGrid(data.blocks, targetEl);
             }
         } catch (error) {
             console.debug('Buffer grid fetch failed:', error.message);
@@ -350,15 +358,19 @@ document.addEventListener('DOMContentLoaded', function() {
             const response = await fetch('/api/status');
             const data = await response.json();
 
+            // Health rollup rides along on every status poll
+            if (data.health) {
+                updateHealthUI(data.health);
+            }
+
             if (data.bufferReady) {
                 updateBufferUI(data.bufferReady);
 
                 if (data.bufferReady.ready) {
-                    if (statusPollTimer) {
-                        clearInterval(statusPollTimer);
-                        statusPollTimer = null;
+                    // Keep the status poll running - it feeds the health panel
+                    if (!bufferReady) {
+                        showPlayer();
                     }
-                    showPlayer();
                 } else {
                     showWaiting();
                     // Fetch grid visualization
@@ -368,6 +380,124 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (error) {
             bufferStatus.textContent = 'Checking...';
         }
+    }
+
+    /**
+     * Stream health panel
+     */
+    const healthToggle = document.getElementById('healthToggle');
+    const healthDot = document.getElementById('healthDot');
+    const healthPanel = document.getElementById('healthPanel');
+    const healthRecorder = document.getElementById('healthRecorder');
+    const healthContinuity = document.getElementById('healthContinuity');
+    const healthGrid = document.getElementById('healthGrid');
+    const healthDownloads = document.getElementById('healthDownloads');
+    const healthDisk = document.getElementById('healthDisk');
+    const diskBarFill = document.getElementById('diskBarFill');
+    let healthGridTimer = null;
+    let latestHealth = null;
+
+    function formatDurationShort(totalSeconds) {
+        if (totalSeconds === null || totalSeconds === undefined) return '--';
+        var hours = Math.floor(totalSeconds / 3600);
+        var minutes = Math.floor((totalSeconds % 3600) / 60);
+        if (hours > 0) return hours + 'h ' + minutes + 'm';
+        if (minutes > 0) return minutes + 'm';
+        return Math.floor(totalSeconds) + 's';
+    }
+
+    function formatBytes(bytes) {
+        if (bytes === null || bytes === undefined) return '--';
+        var gb = bytes / (1024 * 1024 * 1024);
+        if (gb >= 1) return gb.toFixed(1) + ' GB';
+        return Math.round(bytes / (1024 * 1024)) + ' MB';
+    }
+
+    function updateHealthUI(health) {
+        latestHealth = health;
+
+        if (healthDot) {
+            healthDot.className = 'health-dot ' + (health.state || 'good');
+        }
+
+        // Only refresh panel text when it's visible
+        if (!healthPanel || healthPanel.hidden) return;
+
+        if (healthRecorder) {
+            if (health.recorder.live) {
+                healthRecorder.textContent = 'Recording — last segment ' +
+                    formatDurationShort(health.recorder.lastSegmentAgeSec) + ' ago';
+            } else if (health.recorder.lastSegmentAgeSec !== null) {
+                healthRecorder.textContent = 'Recorder stalled — no new audio for ' +
+                    formatDurationShort(health.recorder.lastSegmentAgeSec);
+            } else {
+                healthRecorder.textContent = 'Recorder starting up…';
+            }
+        }
+
+        if (healthContinuity) {
+            var playback = health.playback || {};
+            if (!playback.playheadBuffered) {
+                healthContinuity.textContent = 'Buffer still filling — playback position not reached yet';
+            } else if (playback.nextGap && playback.nextGap.inSec === 0) {
+                healthContinuity.textContent = 'Playing through a gap — ' +
+                    formatDurationShort(playback.nextGap.durationSec) + ' of audio missing';
+            } else if (playback.nextGap) {
+                healthContinuity.textContent = 'Gap ahead in ' +
+                    formatDurationShort(playback.nextGap.inSec) + ' (' +
+                    formatDurationShort(playback.nextGap.durationSec) + ' missing)';
+            } else {
+                healthContinuity.textContent = 'Continuous playback for ' +
+                    formatDurationShort(playback.continuousForSec);
+            }
+        }
+
+        if (healthDownloads) {
+            var rate = health.downloads ? health.downloads.successRatePercent : null;
+            healthDownloads.textContent = rate === null
+                ? 'Downloads: measuring…'
+                : 'Downloads: ' + rate + '% success';
+        }
+
+        if (health.disk && healthDisk && diskBarFill) {
+            var pct = health.disk.capBytes > 0
+                ? Math.min(100, Math.round((health.disk.usedBytes / health.disk.capBytes) * 100))
+                : 0;
+            diskBarFill.style.width = pct + '%';
+            diskBarFill.className = 'disk-bar-fill' + (health.disk.pressure ? ' pressure' : '');
+            healthDisk.textContent = 'Storage: ' + formatBytes(health.disk.usedBytes) +
+                ' of ' + formatBytes(health.disk.capBytes) +
+                (health.disk.freeBytes !== null ? ' · ' + formatBytes(health.disk.freeBytes) + ' free on disk' : '');
+        }
+    }
+
+    function openHealthPanel() {
+        healthPanel.hidden = false;
+        healthToggle.setAttribute('aria-expanded', 'true');
+        if (latestHealth) updateHealthUI(latestHealth);
+        // The panel's grid refreshes slowly, and only while open
+        fetchBufferGrid(healthGrid);
+        if (!healthGridTimer) {
+            healthGridTimer = setInterval(function() {
+                fetchBufferGrid(healthGrid);
+            }, 60000);
+        }
+    }
+
+    function closeHealthPanel() {
+        healthPanel.hidden = true;
+        healthToggle.setAttribute('aria-expanded', 'false');
+        if (healthGridTimer) {
+            clearInterval(healthGridTimer);
+            healthGridTimer = null;
+        }
+    }
+
+    if (healthToggle && healthPanel) {
+        healthToggle.addEventListener('click', function() {
+            if (healthPanel.hidden) openHealthPanel();
+            else closeHealthPanel();
+        });
     }
 
     // Set up media session for lock screen controls
@@ -382,10 +512,40 @@ document.addEventListener('DOMContentLoaded', function() {
      * Fetch and display current track metadata
      * Errors are silently handled - metadata is non-critical
      */
+    let metadataFailureCount = 0;
+
+    /**
+     * Get the wall-clock capture time of what's currently playing, derived
+     * from EXT-X-PROGRAM-DATE-TIME. Stays accurate through pauses and
+     * player buffering. Returns null if unavailable.
+     */
+    function getPlayheadTime() {
+        try {
+            if (hls && hls.playingDate) {
+                return hls.playingDate.getTime();
+            }
+            // Native HLS (Safari/iOS) exposes the program date via getStartDate()
+            if (audio && typeof audio.getStartDate === 'function' && isPlaying) {
+                var start = audio.getStartDate();
+                if (start && !isNaN(start.getTime())) {
+                    return start.getTime() + audio.currentTime * 1000;
+                }
+            }
+        } catch (e) { /* fall through */ }
+        return null;
+    }
+
     async function fetchMetadata() {
         try {
-            const response = await fetch('/metadata/current');
+            var url = '/metadata/current';
+            var playhead = getPlayheadTime();
+            if (playhead) {
+                url += '?time=' + playhead;
+            }
+
+            const response = await fetch(url);
             const data = await response.json();
+            metadataFailureCount = 0;
 
             // Update station info (usually static)
             if (data.station) {
@@ -406,7 +566,12 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.track && data.track.title) {
                 if (data.track.id !== currentTrackId) {
                     currentTrackId = data.track.id;
-                    currentTrackStartTime = Date.now();
+                    // Anchor the track clock to the track's real start when
+                    // the server knows it (not the moment we discovered it)
+                    currentTrackStartTime = data.track.positionSec !== null &&
+                        data.track.positionSec !== undefined
+                        ? Date.now() - data.track.positionSec * 1000
+                        : Date.now();
                     currentTrackDuration = data.track.duration || null;
                     updateTrackDisplay(data.track);
                 }
@@ -418,10 +583,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 showWaitingForTrack(data.trackAvailableIn);
             }
+
+            // Preload the next track's artwork for an instant swap
+            if (data.nextTrack && data.nextTrack.imageUrl) {
+                var preload = new Image();
+                preload.src = data.nextTrack.imageUrl;
+            }
         } catch (error) {
-            // Silently fail - metadata is non-critical
-            console.debug('Metadata fetch failed:', error.message);
-            if (currentTrackId !== 'waiting') {
+            // Transient failures keep the last-known-good display; only
+            // clear it after several consecutive misses
+            metadataFailureCount++;
+            console.debug('Metadata fetch failed (' + metadataFailureCount + '):', error.message);
+            if (metadataFailureCount >= 3 && currentTrackId !== 'waiting') {
                 currentTrackId = 'waiting';
                 showWaitingForTrack();
             }
@@ -519,16 +692,33 @@ document.addEventListener('DOMContentLoaded', function() {
         // Update artist
         trackArtist.textContent = track.artist || 'Unknown Artist';
 
-        // Update album art
+        // Update album art: retry once on failure (transient network/CDN
+        // hiccups), then fall back to the show artwork before giving up
         if (track.imageUrl) {
-            trackArt.src = track.imageUrl;
-            trackArt.classList.remove('hidden');
+            var retried = false;
             trackArt.onerror = function() {
-                // Hide on load error
+                if (!retried) {
+                    retried = true;
+                    var self = this;
+                    setTimeout(function() {
+                        self.src = track.imageUrl +
+                            (track.imageUrl.indexOf('?') === -1 ? '?' : '&') +
+                            'retry=' + Date.now();
+                    }, 1500);
+                    return;
+                }
+                if (showArt && showArt.src && !showArt.classList.contains('hidden')) {
+                    this.onerror = null; // show art already loaded fine
+                    this.src = showArt.src;
+                    return;
+                }
                 this.classList.add('hidden');
                 trackInfo.classList.add('no-art');
             };
+            trackArt.src = track.imageUrl;
+            trackArt.classList.remove('hidden');
         } else {
+            trackArt.onerror = null;
             trackArt.src = '';
             trackArt.classList.add('hidden');
             trackInfo.classList.add('no-art');

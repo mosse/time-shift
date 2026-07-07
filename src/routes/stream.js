@@ -69,6 +69,21 @@ router.get('/stream/segment/:sequenceNumber.ts', async (req, res) => {
       });
     }
 
+    // Metadata exists but the file is gone from disk: respond 404 (not 500)
+    // and evict the orphaned entry so playlists stop referencing it
+    if (!segment.data) {
+      logger.warn(`Segment ${sequenceNumber} has no data on disk, evicting orphaned metadata`);
+      if (segment.metadata?.segmentId) {
+        hybridBufferService.removeSegment(segment.metadata.segmentId).catch(err => {
+          logger.warn(`Failed to evict orphaned segment ${sequenceNumber}: ${err.message}`);
+        });
+      }
+      return res.status(404).json({
+        status: 'error',
+        message: 'Segment data unavailable'
+      });
+    }
+
     // Set appropriate headers
     res.set({
       'Content-Type': 'video/mp2t',
@@ -144,6 +159,17 @@ router.get('/segments/:id', async (req, res) => {
 
     if (!segment) {
       logger.warn(`No segment found for time: ${new Date(timeShiftedTime).toISOString()}`);
+      return res.redirect('/stream/unavailable.ts');
+    }
+
+    // File missing on disk: evict the orphan and serve the fallback segment
+    if (!segment.data) {
+      logger.warn(`Segment at ${new Date(timeShiftedTime).toISOString()} has no data on disk, evicting orphaned metadata`);
+      if (segment.metadata?.segmentId) {
+        hybridBufferService.removeSegment(segment.metadata.segmentId).catch(err => {
+          logger.warn(`Failed to evict orphaned segment: ${err.message}`);
+        });
+      }
       return res.redirect('/stream/unavailable.ts');
     }
 

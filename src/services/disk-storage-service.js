@@ -30,6 +30,10 @@ class DiskStorageService extends EventEmitter {
       totalBytesWritten: 0,
       totalBytesRead: 0
     };
+
+    // Cached free-space probe (statfs is cheap but not free)
+    this._freeBytesCache = { value: null, checkedAt: 0 };
+    this._lastCapacity = null;
     
     logger.info(`Initialized disk storage service: ${this.segmentsPath}`);
   }
@@ -165,47 +169,90 @@ class DiskStorageService extends EventEmitter {
    * @returns {Promise<boolean>} - True if successful
    */
   async writeMetadata(metadata) {
+    // A concurrent-write or crash mid-write must never leave a torn
+    // metadata file: write to a unique tmp file, fsync, then rename over
+    // the target. The previous file is kept as .bak for read fallback.
+    const tmpPath = `${this.metadataPath}.${process.pid}.tmp`;
+    const bakPath = `${this.metadataPath}.bak`;
+
     try {
-      // Ensure the directory exists for the metadata file (not just segments dir)
       const metadataDir = path.dirname(this.metadataPath);
       await this._ensureDir(metadataDir);
 
       // Create a sanitized copy of the metadata to avoid circular references
       const sanitizedMetadata = JSON.parse(JSON.stringify(metadata));
-      
-      // Generate JSON with proper formatting
       const jsonContent = JSON.stringify(sanitizedMetadata, null, 2);
-      
-      // Write directly to the file without using a temporary file
-      await fs.writeFile(this.metadataPath, jsonContent, { encoding: 'utf8' });
-      
+
+      const fileHandle = await fs.open(tmpPath, 'w');
+      try {
+        await fileHandle.writeFile(jsonContent, { encoding: 'utf8' });
+        await fileHandle.sync();
+      } finally {
+        await fileHandle.close();
+      }
+
+      // Preserve the last-known-good file before replacing it
+      try {
+        await fs.copyFile(this.metadataPath, bakPath);
+      } catch (error) {
+        if (error.code !== 'ENOENT') {
+          logger.debug(`Could not back up metadata file: ${error.message}`);
+        }
+      }
+
+      await fs.rename(tmpPath, this.metadataPath);
+
       this.stats.writes++;
       this.stats.totalBytesWritten += jsonContent.length;
-      logger.info('Successfully wrote buffer metadata to disk');
+      logger.debug('Successfully wrote buffer metadata to disk');
       return true;
     } catch (error) {
       this.stats.errors++;
       logger.error(`Error writing metadata to disk: ${error.message}`);
+      // Best-effort cleanup of the orphaned tmp file
+      await fs.unlink(tmpPath).catch(() => {});
       return false;
     }
   }
-  
+
   /**
    * Read metadata from disk
+   * Falls back to the .bak copy if the primary file is missing or corrupt
    * @returns {Object|null} - The metadata or null if not found
    */
   async readMetadata() {
+    const primary = await this._readMetadataFile(this.metadataPath);
+    if (primary !== null) {
+      return primary;
+    }
+
+    const backup = await this._readMetadataFile(`${this.metadataPath}.bak`);
+    if (backup !== null) {
+      logger.warn('Primary metadata file unusable, recovered from backup');
+      return backup;
+    }
+
+    return null;
+  }
+
+  /**
+   * Read and parse a single metadata file
+   * @private
+   * @param {string} filePath - Path to read
+   * @returns {Object|null} - Parsed metadata or null on any failure
+   */
+  async _readMetadataFile(filePath) {
     try {
-      const data = await fs.readFile(this.metadataPath, 'utf8');
-      logger.debug(`Metadata read from disk: ${this.metadataPath}`);
+      const data = await fs.readFile(filePath, 'utf8');
+      logger.debug(`Metadata read from disk: ${filePath}`);
       try {
         return JSON.parse(data);
       } catch (parseError) {
         // Log a portion of the data to help diagnose the issue
-        const preview = data.length > 200 
-          ? data.substring(0, 200) + '...' 
+        const preview = data.length > 200
+          ? data.substring(0, 200) + '...'
           : data;
-        logger.error(`Error parsing metadata JSON: ${parseError.message}`);
+        logger.error(`Error parsing metadata JSON (${filePath}): ${parseError.message}`);
         logger.error(`Metadata content (first 200 chars): ${preview}`);
         return null;
       }
@@ -215,12 +262,80 @@ class DiskStorageService extends EventEmitter {
         this.stats.errors++;
         logger.error(`Error reading metadata from disk: ${error.message}`);
       } else {
-        logger.debug(`Metadata file not found: ${this.metadataPath}`);
+        logger.debug(`Metadata file not found: ${filePath}`);
       }
       return null;
     }
   }
   
+  /**
+   * Get free bytes on the volume holding the storage directory
+   * Cached for CAPACITY_CHECK_INTERVAL to avoid hammering statfs
+   * @private
+   * @param {boolean} [fresh=false] - Bypass the cache
+   * @returns {Promise<number|null>} - Free bytes, or null if unavailable
+   */
+  async _getFreeBytes(fresh = false) {
+    const now = Date.now();
+    const maxAge = config.STORAGE.CAPACITY_CHECK_INTERVAL || 60000;
+
+    if (!fresh && this._freeBytesCache.value !== null &&
+        now - this._freeBytesCache.checkedAt < maxAge) {
+      return this._freeBytesCache.value;
+    }
+
+    try {
+      // fs.statfs requires Node >= 18.15
+      if (typeof fs.statfs !== 'function') {
+        return null;
+      }
+      const stat = await fs.statfs(this.baseDir);
+      const freeBytes = stat.bavail * stat.bsize;
+      this._freeBytesCache = { value: freeBytes, checkedAt: now };
+      return freeBytes;
+    } catch (error) {
+      logger.warn(`Could not determine free disk space: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Check storage capacity against the configured limits
+   * @param {number} usedBytes - Bytes currently used by the buffer
+   * @param {boolean} [fresh=false] - Bypass the free-space cache
+   * @returns {Promise<Object>} - { ok, overCap, lowFree, freeBytes, usedBytes, capBytes, minFreeBytes }
+   */
+  async checkCapacity(usedBytes = 0, fresh = false) {
+    const capBytes = config.STORAGE.MAX_STORAGE_BYTES;
+    const minFreeBytes = config.STORAGE.MIN_FREE_BYTES;
+    const freeBytes = await this._getFreeBytes(fresh);
+
+    const overCap = capBytes > 0 && usedBytes >= capBytes;
+    const lowFree = freeBytes !== null && freeBytes <= minFreeBytes;
+
+    const result = {
+      ok: !overCap && !lowFree,
+      overCap,
+      lowFree,
+      freeBytes,
+      usedBytes,
+      capBytes,
+      minFreeBytes,
+      checkedAt: Date.now()
+    };
+
+    this._lastCapacity = result;
+    return result;
+  }
+
+  /**
+   * Get the most recent capacity check result (may be null before first check)
+   * @returns {Object|null}
+   */
+  getLastCapacity() {
+    return this._lastCapacity;
+  }
+
   /**
    * Check if a segment exists on disk
    * @param {string} segmentId - Unique identifier for the segment

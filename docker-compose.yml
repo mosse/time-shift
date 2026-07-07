@@ -6,12 +6,13 @@ services:
     container_name: encore-fm
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3456:3000"
     volumes:
       - encore-data:/app/data
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - HOST_PORT=3456
       # Uncomment to customize:
       # - DELAY_DURATION=28800000      # 8 hours in ms
       # - BUFFER_DURATION=30600000     # 8.5 hours in ms

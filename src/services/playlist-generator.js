@@ -56,7 +56,17 @@ class PlaylistGenerator {
       logger.info(`Generating playlist for target time: ${new Date(targetTime).toISOString()}`);
 
       // Get segment around the target time
-      const anchorSegment = await this.bufferService.getSegmentAt(targetTime);
+      let anchorSegment = await this.bufferService.getSegmentAt(targetTime);
+
+      // If the anchor is malformed (e.g. restored from disk without full
+      // metadata), fall back to the nearest shape-valid segment instead of
+      // serving an empty playlist while the buffer still has audio
+      if (anchorSegment && !Number.isFinite(anchorSegment.metadata?.sequenceNumber)) {
+        logger.warn('Anchor segment is missing sequence metadata, falling back to nearest valid segment');
+        anchorSegment = typeof this.bufferService.getNearestValidSegment === 'function'
+          ? this.bufferService.getNearestValidSegment(targetTime)
+          : null;
+      }
 
       if (!anchorSegment) {
         const oldestTime = this.bufferService.getOldestSegmentTime();
@@ -111,15 +121,21 @@ class PlaylistGenerator {
         }
       }
 
-      if (playlistSegments.length === 0) {
+      // Drop any segments that lost their metadata shape so formatting
+      // never dereferences undefined
+      const validSegments = playlistSegments.filter(
+        s => Number.isFinite(s?.metadata?.sequenceNumber)
+      );
+
+      if (validSegments.length === 0) {
         logger.warn('No valid segments found for playlist');
         return this._generateEmptyPlaylist(baseUrl);
       }
 
       // Sort segments by sequence number to ensure correct order
-      playlistSegments.sort((a, b) => a.metadata.sequenceNumber - b.metadata.sequenceNumber);
+      validSegments.sort((a, b) => a.metadata.sequenceNumber - b.metadata.sequenceNumber);
 
-      return this._formatPlaylist(playlistSegments, maxDuration, baseUrl);
+      return this._formatPlaylist(validSegments, maxDuration, baseUrl);
     } catch (error) {
       logger.error(`Error generating playlist: ${error}`);
       return this._generateEmptyPlaylist();
@@ -152,7 +168,13 @@ class PlaylistGenerator {
       const duration = segment.metadata.duration || 10;
       const sequenceNumber = segment.metadata.sequenceNumber;
       const uri = `/stream/segment/${sequenceNumber}.ts`;
-      
+
+      // Wall-clock timestamp lets the player know the real capture time of
+      // what it's playing (used to align track metadata with the playhead)
+      if (Number.isFinite(segment.timestamp)) {
+        m3u8Content += `#EXT-X-PROGRAM-DATE-TIME:${new Date(segment.timestamp).toISOString()}\n`;
+      }
+
       // Add segment info to m3u8
       m3u8Content += `#EXTINF:${duration.toFixed(3)},\n`;
       m3u8Content += `${baseUrl}${uri}\n`;

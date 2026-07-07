@@ -3,7 +3,7 @@
  * Enables offline caching and background audio playback
  */
 
-const CACHE_NAME = 'encore-fm-v1';
+const CACHE_NAME = 'encore-fm-v2';
 const STATIC_ASSETS = [
   '/',
   '/css/styles.css',
@@ -52,46 +52,45 @@ self.addEventListener('activate', (event) => {
 });
 
 /**
- * Fetch event - serve from cache, fallback to network
- * HLS segments always go to network for live streaming
+ * Fetch event
+ * - HLS segments, playlists, API and metadata are always network-only:
+ *   they are time-sensitive, and caching /metadata/current froze the
+ *   now-playing display at whatever loaded first
+ * - Static assets are network-first with cache fallback, so UI updates
+ *   reach installed PWAs while offline loads still work
  */
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Always fetch HLS segments and playlists from network
-  // These are time-sensitive and should not be cached
   if (url.pathname.endsWith('.ts') ||
       url.pathname.endsWith('.m3u8') ||
-      url.pathname.startsWith('/api/')) {
+      url.pathname.startsWith('/api/') ||
+      url.pathname.startsWith('/metadata/') ||
+      url.pathname.startsWith('/stream')) {
     event.respondWith(fetch(event.request));
     return;
   }
 
-  // For static assets, try cache first, then network
   event.respondWith(
-    caches.match(event.request)
-      .then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
+    fetch(event.request)
+      .then((response) => {
+        // Don't cache non-successful responses
+        if (!response || response.status !== 200 || response.type !== 'basic') {
+          return response;
         }
 
-        return fetch(event.request)
-          .then((response) => {
-            // Don't cache non-successful responses
-            if (!response || response.status !== 200 || response.type !== 'basic') {
-              return response;
-            }
-
-            // Clone the response for caching
-            const responseToCache = response.clone();
-
-            caches.open(CACHE_NAME)
-              .then((cache) => {
-                cache.put(event.request, responseToCache);
-              });
-
-            return response;
+        // Keep the latest copy for offline fallback
+        const responseToCache = response.clone();
+        caches.open(CACHE_NAME)
+          .then((cache) => {
+            cache.put(event.request, responseToCache);
           });
+
+        return response;
+      })
+      .catch(() => {
+        // Network unavailable: fall back to the last cached copy
+        return caches.match(event.request);
       })
   );
 });

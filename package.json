@@ -11,7 +11,9 @@
     "dev": "nodemon src/index.js",
     "start:prod": "NODE_ENV=production node src/index.js",
     "start:debug": "LOG_LEVEL=debug node src/index.js",
-    "test": "npm run test:logger && npm run test:buffer && npm run test:buffer-extended && npm run test:playlist && npm run test:playlist-generator && npm run test:expansion && npm run test:downloader && npm run test:downloader-enhanced && npm run test:monitor && npm run test:disk-storage && npm run test:hybrid-buffer && npm run test:hybrid-buffer-simple && npm run test:service-manager && npm run test:errors && npm run test:routes && npm run test:pwa && npm run test:pipeline && npm run test:system",
+    "test": "STORAGE_DIR=./data/test-run npm run test:unit && STORAGE_DIR=./data/test-run npm run test:legacy",
+    "test:unit": "STORAGE_DIR=./data/test-run node --test src/test/unit/*.js",
+    "test:legacy": "npm run test:logger && npm run test:buffer && npm run test:buffer-extended && npm run test:playlist && npm run test:playlist-generator && npm run test:expansion && npm run test:downloader && npm run test:downloader-enhanced && npm run test:monitor && npm run test:disk-storage && npm run test:hybrid-buffer && npm run test:hybrid-buffer-simple && npm run test:service-manager && npm run test:errors && npm run test:routes && npm run test:pwa && npm run test:pipeline && npm run test:system",
     "test:logger": "node src/test/test-logger.js",
     "test:playlist": "node src/test/test-playlist.js",
     "test:playlist-generator": "node src/test/test-playlist-generator.js",
@@ -45,7 +47,6 @@
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "m3u8-parser": "^7.2.0",
-    "morgan": "^1.10.0",
     "winston": "^3.17.0",
     "winston-daily-rotate-file": "^4.7.1"
   },

@@ -44,6 +44,14 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     logger.request(req, res, duration);
   });
+  // A client that disconnects mid-response (common for streaming segments)
+  // must never surface as an uncaught exception
+  res.on('error', (error) => {
+    logger.warn(`Response stream error on ${req.method} ${req.path}: ${error.message}`);
+  });
+  req.on('error', (error) => {
+    logger.warn(`Request stream error on ${req.method} ${req.path}: ${error.message}`);
+  });
   next();
 });
 

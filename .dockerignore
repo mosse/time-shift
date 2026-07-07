@@ -7,3 +7,8 @@ logs
 .env
 *.md
 .DS_Store
+test
+src/test
+.github
+.claude
+firebase-debug.log

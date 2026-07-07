@@ -121,7 +121,7 @@ async function runSystemTest() {
     
     // Step 4: Check acquisition pipeline
     logger.info('Step 4: Checking acquisition pipeline...');
-    await checkAcquisitionPipeline();
+    await checkAcquisitionPipeline(testServiceManager);
     
     // Step 5: Wait and observe system operation
     const waitDuration = Math.min(TEST_DURATION, 30000); // Max 30 seconds for CI environments
@@ -214,10 +214,11 @@ async function testApiEndpoints() {
 
 /**
  * Check acquisition pipeline
+ * Uses the singleton serviceManager - that's the instance startServer() runs
  */
 async function checkAcquisitionPipeline() {
   // Get initial pipeline status
-  const initialStatus = testServiceManager.getPipelineStatus();
+  const initialStatus = serviceManager.getPipelineStatus();
   
   if (!initialStatus.isRunning) {
     throw new Error('Acquisition pipeline is not running');
@@ -229,22 +230,22 @@ async function checkAcquisitionPipeline() {
   logger.info('Waiting for segments to be added to buffer...');
   await waitForCondition(
     () => {
-      const status = testServiceManager.getPipelineStatus();
-      return status.buffer.segmentsStored > 0;
+      const status = serviceManager.getPipelineStatus();
+      return status.buffer.segmentCount > 0;
     },
     20000, // 20 seconds max
     1000   // Check every second
   );
-  
+
   // Get updated status after waiting
-  const updatedStatus = testServiceManager.getPipelineStatus();
-  
-  if (updatedStatus.buffer.segmentsStored === 0) {
+  const updatedStatus = serviceManager.getPipelineStatus();
+
+  if (updatedStatus.buffer.segmentCount === 0) {
     throw new Error('No segments added to buffer after waiting period');
   }
-  
-  logger.info('Segments successfully added to buffer', { 
-    segmentsStored: updatedStatus.buffer.segmentsStored 
+
+  logger.info('Segments successfully added to buffer', {
+    segmentCount: updatedStatus.buffer.segmentCount
   });
   
   return true;
@@ -342,14 +343,14 @@ async function testShutdown(server) {
   logger.info('Testing shutdown procedures...');
   
   // Get initial status
-  const initialStatus = testServiceManager.getPipelineStatus();
+  const initialStatus = serviceManager.getPipelineStatus();
   logger.info('Status before shutdown:', initialStatus);
-  
+
   // Stop pipeline
-  await testServiceManager.stopPipeline();
-  
+  await serviceManager.stopPipeline();
+
   // Verify pipeline stopped
-  const stoppedStatus = testServiceManager.getPipelineStatus();
+  const stoppedStatus = serviceManager.getPipelineStatus();
   if (stoppedStatus.isRunning) {
     throw new Error('Pipeline did not stop properly');
   }

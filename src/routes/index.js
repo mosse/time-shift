@@ -3,6 +3,7 @@ const { serviceManager } = require('../services');
 const { hybridBufferService } = require('../services/hybrid-buffer-service');
 const { metadataService } = require('../services/metadata-service');
 const logger = require('../utils/logger');
+const config = require('../config/config');
 
 const router = express.Router();
 
@@ -100,16 +101,42 @@ router.get('/', (req, res) => {
  */
 router.get('/metadata/current', async (req, res) => {
   try {
-    // Calculate playback time based on the 8-hour delay
-    // Subtract additional buffer offset to account for HLS player buffering (~30 seconds)
     const now = Date.now();
-    const hlsBufferOffset = 60000; // 60 seconds for HLS buffering delay
-    const playbackTime = now - 28800000 - hlsBufferOffset; // 8 hours + buffer offset
+
+    // Preferred: the client reports its actual playhead capture time,
+    // derived from EXT-X-PROGRAM-DATE-TIME in the playlist. This stays
+    // correct through pauses, player buffering, and any DELAY_DURATION.
+    const reportedTime = parseInt(req.query.time, 10);
+    const playheadCaptureTime = Number.isFinite(reportedTime) &&
+      reportedTime > 0 && reportedTime <= now
+      ? reportedTime
+      : now - config.DELAY_DURATION; // fallback: assume un-paused playback
+
+    // Segment capture lags the actual broadcast by the HLS live-edge
+    // latency; metadata timestamps are broadcast times
+    const playbackTime = playheadCaptureTime - config.CAPTURE_LATENCY;
 
     // Get metadata for that time
     const track = metadataService.getMetadataAt(playbackTime);
     const show = metadataService.getShowAt(playbackTime);
     const station = metadataService.getStationInfo();
+
+    // Enrich with position within the track so the client can schedule its
+    // next poll for the actual track boundary
+    let enrichedTrack = null;
+    if (track) {
+      const startedAt = track.startedAt || null;
+      enrichedTrack = {
+        ...track,
+        startedAt,
+        positionSec: startedAt !== null
+          ? Math.max(0, Math.round((playbackTime - startedAt) / 1000))
+          : null
+      };
+    }
+
+    // The following track (for boundary scheduling and art preloading)
+    const nextTrack = metadataService.getNextTrackAfter(playbackTime);
 
     // Calculate when track metadata will be available if not currently available
     let trackAvailableIn = null;
@@ -126,7 +153,8 @@ router.get('/metadata/current', async (req, res) => {
       playbackTime: new Date(playbackTime).toISOString(),
       station,
       show,
-      track,
+      track: enrichedTrack,
+      nextTrack,
       trackAvailableIn
     });
   } catch (error) {
