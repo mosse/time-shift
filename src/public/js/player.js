@@ -686,41 +686,56 @@ document.addEventListener('DOMContentLoaded', function() {
         // Remove loading/no-art states
         trackInfo.classList.remove('loading', 'no-art');
 
-        // Update title (track name)
+        // Update title (track name) - the title itself links to Apple Music
         trackTitle.textContent = track.title || 'Unknown Track';
+        if (track.appleMusicUrl) {
+            trackTitle.setAttribute('href', track.appleMusicUrl);
+            trackTitle.classList.add('linked');
+        } else {
+            trackTitle.removeAttribute('href');
+            trackTitle.classList.remove('linked');
+        }
 
         // Update artist
         trackArtist.textContent = track.artist || 'Unknown Artist';
 
         // Update album art: retry once on failure (transient network/CDN
-        // hiccups), then fall back to the show artwork before giving up
+        // hiccups), then fall back to the show artwork before giving up.
+        // The blurred glow copy tracks whatever the art ends up being.
+        var trackArtGlow = document.getElementById('trackArtGlow');
+        function setHeroArt(src) {
+            trackArt.src = src;
+            if (trackArtGlow) trackArtGlow.src = src;
+        }
         if (track.imageUrl) {
             var retried = false;
             trackArt.onerror = function() {
                 if (!retried) {
                     retried = true;
-                    var self = this;
                     setTimeout(function() {
-                        self.src = track.imageUrl +
+                        setHeroArt(track.imageUrl +
                             (track.imageUrl.indexOf('?') === -1 ? '?' : '&') +
-                            'retry=' + Date.now();
+                            'retry=' + Date.now());
                     }, 1500);
                     return;
                 }
                 if (showArt && showArt.src && !showArt.classList.contains('hidden')) {
                     this.onerror = null; // show art already loaded fine
-                    this.src = showArt.src;
+                    setHeroArt(showArt.src);
                     return;
                 }
                 this.classList.add('hidden');
+                if (trackArtGlow) trackArtGlow.classList.add('hidden');
                 trackInfo.classList.add('no-art');
             };
-            trackArt.src = track.imageUrl;
+            setHeroArt(track.imageUrl);
             trackArt.classList.remove('hidden');
+            if (trackArtGlow) trackArtGlow.classList.remove('hidden');
         } else {
             trackArt.onerror = null;
-            trackArt.src = '';
+            setHeroArt('');
             trackArt.classList.add('hidden');
+            if (trackArtGlow) trackArtGlow.classList.add('hidden');
             trackInfo.classList.add('no-art');
         }
 
@@ -780,6 +795,11 @@ document.addEventListener('DOMContentLoaded', function() {
     function showWaitingForTrack(availableInSeconds) {
         trackInfo.classList.add('loading', 'no-art');
         trackTitle.textContent = 'Track Info';
+        trackTitle.removeAttribute('href');
+        trackTitle.classList.remove('linked');
+
+        var waitingGlow = document.getElementById('trackArtGlow');
+        if (waitingGlow) waitingGlow.classList.add('hidden');
 
         if (availableInSeconds && availableInSeconds > 0) {
             const hours = Math.floor(availableInSeconds / 3600);

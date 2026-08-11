@@ -80,6 +80,9 @@ module.exports = {
   // How far the capture lags the actual broadcast (HLS live-edge latency).
   // Used to align track metadata with what the listener actually hears.
   CAPTURE_LATENCY: parseInt(process.env.CAPTURE_LATENCY, 10) || 30000, // 30 seconds
+
+  // Apple Music storefront for track links (iTunes Search API country code)
+  APPLE_MUSIC_STOREFRONT: process.env.APPLE_MUSIC_STOREFRONT || 'gb',
   
   // Server settings
   PORT: process.env.PORT || 3000,

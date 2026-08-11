@@ -522,6 +522,68 @@ class MetadataService extends EventEmitter {
   }
 
   /**
+   * Look up an Apple Music link for a track via the iTunes Search API.
+   * Results (including misses) are cached per track id; a miss falls back
+   * to an Apple Music search deep link so the UI always has something.
+   * @param {Object} track - Track data ({ id, artist, title })
+   * @returns {Promise<string|null>} - Apple Music URL or null
+   */
+  async getAppleMusicUrl(track) {
+    if (!track || !track.id || !track.artist || !track.title) return null;
+    if (track.artist === 'Unknown Artist' || track.title === 'Unknown Track') return null;
+
+    if (!this._appleMusicCache) this._appleMusicCache = new Map();
+    if (this._appleMusicCache.has(track.id)) {
+      return this._appleMusicCache.get(track.id);
+    }
+
+    const storefront = config.APPLE_MUSIC_STOREFRONT || 'gb';
+    const term = `${track.artist} ${track.title}`;
+    const searchFallback = `https://music.apple.com/${storefront}/search?term=${encodeURIComponent(term)}`;
+    let url = searchFallback;
+
+    try {
+      const fetch = globalThis.fetch || (await import('node-fetch')).default;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      try {
+        const response = await fetch(
+          `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&media=music&entity=song&limit=5&country=${storefront}`,
+          { signal: controller.signal, headers: { 'User-Agent': 'encore.fm/1.0' } }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          const results = Array.isArray(data.results) ? data.results : [];
+          // Prefer a result whose artist actually matches (search can
+          // surface covers and karaoke versions first)
+          const wanted = track.artist.toLowerCase();
+          const match = results.find(r => {
+            const got = (r.artistName || '').toLowerCase();
+            return got.includes(wanted) || wanted.includes(got);
+          }) || results[0];
+          if (match && match.trackViewUrl) {
+            url = match.trackViewUrl;
+          }
+        }
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch (error) {
+      // Lookup is best-effort; the search fallback still works
+      logger.debug(`Apple Music lookup failed for "${term}": ${error.message}`);
+    }
+
+    // Bound the cache (tracks churn every few minutes; 500 is days of listening)
+    if (this._appleMusicCache.size >= 500) {
+      const oldest = this._appleMusicCache.keys().next().value;
+      this._appleMusicCache.delete(oldest);
+    }
+    this._appleMusicCache.set(track.id, url);
+
+    return url;
+  }
+
+  /**
    * Get the first track starting after a given timestamp
    * @param {number} timestamp - Reference timestamp
    * @returns {Object|null} - The next track's data or null

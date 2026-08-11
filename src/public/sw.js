@@ -3,7 +3,7 @@
  * Enables offline caching and background audio playback
  */
 
-const CACHE_NAME = 'encore-fm-v2';
+const CACHE_NAME = 'encore-fm-v3';
 const STATIC_ASSETS = [
   '/',
   '/css/styles.css',

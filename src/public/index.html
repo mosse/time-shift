@@ -53,10 +53,60 @@
             </div>
 
             <div id="playerContainer" class="player-container" style="display: none;">
-                <div class="station-header"></div>
 
-                <div id="showInfo" class="show-info">
-                    <img id="showArt" class="show-art" src="" alt="Programme artwork">
+                <div id="trackInfo" class="track-hero">
+                    <div class="hero-art-wrap">
+                        <img id="trackArtGlow" class="hero-art-glow" src="" alt="" aria-hidden="true">
+                        <img id="trackArt" class="hero-art" src="" alt="Album art">
+                        <div class="hero-art-placeholder" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M9 18V6l10-2v11" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                                <circle cx="6.5" cy="18" r="2.5" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                                <circle cx="16.5" cy="15" r="2.5" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <a id="trackTitle" class="hero-title" target="_blank" rel="noopener">Waiting for track info...</a>
+                    <p id="trackArtist" class="hero-artist"></p>
+                </div>
+
+                <div class="transport">
+                    <div class="connection-status">
+                        <span id="connectionIndicator" class="indicator"></span>
+                        <span id="connectionStatus">Idle</span>
+                    </div>
+                    <button id="playButton" class="play-button" aria-label="Play">
+                        <svg class="icon-play" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <polygon points="6,4 20,12 6,20"/>
+                        </svg>
+                        <svg class="icon-pause" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="5" y="4" width="4" height="16" rx="1"/>
+                            <rect x="15" y="4" width="4" height="16" rx="1"/>
+                        </svg>
+                    </button>
+                    <button id="healthToggle" class="health-toggle" aria-label="Stream health details" aria-expanded="false">
+                        <span id="healthDot" class="health-dot"></span>
+                        <span id="healthLabel" class="health-label">Health</span>
+                    </button>
+                </div>
+
+                <div id="healthPanel" class="health-panel" hidden>
+                    <p id="healthRecorder" class="health-line">Recorder: checking…</p>
+                    <p id="healthContinuity" class="health-line">Continuity: checking…</p>
+                    <div class="buffer-grid-container health-grid-container">
+                        <div class="buffer-grid-header">
+                            <span class="grid-label-left">8h ago</span>
+                            <span class="grid-label-right">now</span>
+                        </div>
+                        <div id="healthGrid" class="buffer-grid"></div>
+                    </div>
+                    <p id="healthDownloads" class="health-line health-line-small"></p>
+                    <div class="disk-bar" aria-hidden="true"><div id="diskBarFill" class="disk-bar-fill"></div></div>
+                    <p id="healthDisk" class="health-line health-line-small"></p>
+                </div>
+
+                <div id="showInfo" class="show-card">
+                    <img id="showArt" class="show-card-art" src="" alt="Programme artwork">
                     <div class="show-details">
                         <p id="showTitle" class="show-title">Loading...</p>
                         <p id="showSubtitle" class="show-subtitle"></p>
@@ -64,54 +114,7 @@
                     </div>
                 </div>
 
-                <div class="player-right">
-                    <div class="player-status">
-                        <div class="connection-status">
-                            <span id="connectionIndicator" class="indicator"></span>
-                            <span id="connectionStatus">Idle</span>
-                        </div>
-                        <button id="healthToggle" class="health-toggle" aria-label="Stream health details" aria-expanded="false">
-                            <span id="healthDot" class="health-dot"></span>
-                            <span id="healthLabel" class="health-label">Health</span>
-                        </button>
-                    </div>
-
-                    <div id="healthPanel" class="health-panel" hidden>
-                        <p id="healthRecorder" class="health-line">Recorder: checking…</p>
-                        <p id="healthContinuity" class="health-line">Continuity: checking…</p>
-                        <div class="buffer-grid-container health-grid-container">
-                            <div class="buffer-grid-header">
-                                <span class="grid-label-left">8h ago</span>
-                                <span class="grid-label-right">now</span>
-                            </div>
-                            <div id="healthGrid" class="buffer-grid"></div>
-                        </div>
-                        <p id="healthDownloads" class="health-line health-line-small"></p>
-                        <div class="disk-bar" aria-hidden="true"><div id="diskBarFill" class="disk-bar-fill"></div></div>
-                        <p id="healthDisk" class="health-line health-line-small"></p>
-                    </div>
-
-                    <div id="trackInfo" class="track-info">
-                        <div class="track-content">
-                            <img id="trackArt" class="track-art" src="" alt="Album art">
-                            <div class="track-details">
-                                <p id="trackTitle" class="track-title">Waiting for track info...</p>
-                                <p id="trackArtist" class="track-artist"></p>
-                            </div>
-                            <button id="playButton" class="play-button" aria-label="Play">
-                                <svg class="icon-play" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                    <polygon points="6,4 20,12 6,20"/>
-                                </svg>
-                                <svg class="icon-pause" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                    <rect x="5" y="4" width="4" height="16" rx="1"/>
-                                    <rect x="15" y="4" width="4" height="16" rx="1"/>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-
-                    <audio id="audio" aria-label="Radio stream player"></audio>
-                </div>
+                <audio id="audio" aria-label="Radio stream player"></audio>
             </div>
         </main>
 

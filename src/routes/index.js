@@ -131,7 +131,8 @@ router.get('/metadata/current', async (req, res) => {
         startedAt,
         positionSec: startedAt !== null
           ? Math.max(0, Math.round((playbackTime - startedAt) / 1000))
-          : null
+          : null,
+        appleMusicUrl: await metadataService.getAppleMusicUrl(track)
       };
     }
 
