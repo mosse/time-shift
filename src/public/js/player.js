@@ -335,7 +335,9 @@ document.addEventListener('DOMContentLoaded', function() {
             gridPollTimer = null;
         }
         waitingContainer.style.display = 'none';
-        playerContainer.style.display = 'flex';
+        // Clear the inline display so the stylesheet controls layout
+        // (flex on mobile, two-column grid on desktop)
+        playerContainer.style.display = '';
         bufferReady = true;
         // Start fetching track metadata
         startMetadataPolling();
@@ -704,8 +706,14 @@ document.addEventListener('DOMContentLoaded', function() {
         // The blurred glow copy tracks whatever the art ends up being.
         var trackArtGlow = document.getElementById('trackArtGlow');
         function setHeroArt(src) {
-            trackArt.src = src;
-            if (trackArtGlow) trackArtGlow.src = src;
+            if (src) {
+                trackArt.src = src;
+                if (trackArtGlow) trackArtGlow.src = src;
+            } else {
+                // Empty string would resolve to the page URL and fire a request
+                trackArt.removeAttribute('src');
+                if (trackArtGlow) trackArtGlow.removeAttribute('src');
+            }
         }
         if (track.imageUrl) {
             var retried = false;
@@ -729,6 +737,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 trackInfo.classList.add('no-art');
             };
             setHeroArt(track.imageUrl);
+            trackArt.classList.remove('hidden');
+            if (trackArtGlow) trackArtGlow.classList.remove('hidden');
+        } else if (showArt && showArt.src && !showArt.classList.contains('hidden')) {
+            // No track art from the BBC: use the programme artwork rather
+            // than an empty placeholder
+            trackArt.onerror = null;
+            setHeroArt(showArt.src);
             trackArt.classList.remove('hidden');
             if (trackArtGlow) trackArtGlow.classList.remove('hidden');
         } else {

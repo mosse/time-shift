@@ -1,25 +1,33 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Hanken+Grotesk:wght@400;500;600;700&display=swap');
+
 *, *::before, *::after {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
 }
 
 :root {
-  /* encore.fm brand colors */
-  --accent-cyan: #00d4ff;
+  /* "Curtain call" palette: warm stage-black with a brass spotlight.
+     encore = the extra performance; the interface is the stage. */
+  --accent-gold: #e6a53c;
+  --accent-gold-dim: rgba(230, 165, 60, 0.55);
   --accent-pink: #ff6b9d;
-  --accent-green: #34c759;
+  --accent-green: #62c47a;
   --accent-yellow: #ffcc00;
+  /* Legacy alias so older rules keep working */
+  --accent-cyan: var(--accent-gold);
 
-  /* Dark theme palette */
-  --bg-primary: #000000;
-  --bg-elevated: #1c1c1e;
-  --bg-secondary: #2c2c2e;
-  --bg-tertiary: #3a3a3c;
+  --bg-primary: #0e0b08;
+  --bg-elevated: #1a1510;
+  --bg-secondary: #272017;
+  --bg-tertiary: #382e20;
 
-  /* Text hierarchy */
-  --text-primary: #ffffff;
-  --text-secondary: rgba(255, 255, 255, 0.6);
-  --text-tertiary: rgba(255, 255, 255, 0.4);
+  /* Text hierarchy (warm whites) */
+  --text-primary: #f6efe3;
+  --text-secondary: rgba(246, 239, 227, 0.62);
+  --text-tertiary: rgba(246, 239, 227, 0.38);
+
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body: 'Hanken Grotesk', -apple-system, system-ui, sans-serif;
 
   /* Safe areas */
   --safe-top: env(safe-area-inset-top, 0px);
@@ -34,15 +42,29 @@ html, body {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
+  font-family: var(--font-body);
   line-height: 1.4;
   padding: 0;
   margin: 0;
-  background: var(--bg-primary);
+  /* A faint top-of-stage spotlight keeps the black from reading as void */
+  background:
+    radial-gradient(120% 55% at 50% -10%, rgba(230, 165, 60, 0.09), transparent 60%),
+    var(--bg-primary);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior: none;
+}
+
+/* Film-grain overlay for analog warmth */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 /* App container */
@@ -65,22 +87,23 @@ header {
 
 h1 {
   margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: 1.15rem;
+  font-weight: 500;
 }
 
 .logo {
-  font-weight: 700;
+  font-family: var(--font-display);
   font-style: italic;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
 }
 
 .logo-dot {
   font-weight: 500;
   font-style: normal;
-  color: var(--accent-cyan);
+  font-size: 0.85em;
+  color: var(--accent-gold);
 }
 
 .logo-small, .logo-dot-small, .tagline {
@@ -119,11 +142,12 @@ main {
 }
 
 .waiting-container h2 {
+  font-family: var(--font-display);
   color: var(--text-primary);
   margin: 0 0 8px;
-  font-size: 1.4rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-size: 1.6rem;
+  font-weight: 500;
+  letter-spacing: 0.005em;
 }
 
 .waiting-description {
@@ -138,21 +162,22 @@ main {
 }
 
 #countdownTime {
-  font-size: 3rem;
+  font-family: var(--font-display);
+  font-size: 3.4rem;
   font-weight: 300;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: 0.01em;
   display: block;
 }
 
 .countdown-label {
-  font-size: 0.7rem;
-  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  color: var(--accent-gold-dim);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-weight: 500;
-  margin-top: 4px;
+  letter-spacing: 0.22em;
+  font-weight: 600;
+  margin-top: 6px;
   display: block;
 }
 
@@ -197,20 +222,20 @@ main {
 }
 
 .buffer-block.level-1 {
-  background: rgba(0, 212, 255, 0.2);
+  background: rgba(230, 165, 60, 0.18);
 }
 
 .buffer-block.level-2 {
-  background: rgba(0, 212, 255, 0.4);
+  background: rgba(230, 165, 60, 0.38);
 }
 
 .buffer-block.level-3 {
-  background: rgba(0, 212, 255, 0.65);
+  background: rgba(230, 165, 60, 0.62);
 }
 
 .buffer-block.level-4 {
   background: var(--accent-cyan);
-  box-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
+  box-shadow: 0 0 8px rgba(230, 165, 60, 0.35);
 }
 
 .buffer-block.playback-zone {
@@ -243,15 +268,15 @@ main {
 }
 
 .legend-block.level-1 {
-  background: rgba(0, 212, 255, 0.2);
+  background: rgba(230, 165, 60, 0.18);
 }
 
 .legend-block.level-2 {
-  background: rgba(0, 212, 255, 0.4);
+  background: rgba(230, 165, 60, 0.38);
 }
 
 .legend-block.level-3 {
-  background: rgba(0, 212, 255, 0.65);
+  background: rgba(230, 165, 60, 0.62);
 }
 
 .legend-block.level-4 {
@@ -299,8 +324,20 @@ main {
 
 .hero-art-wrap {
   position: relative;
-  width: 100%;
-  max-width: 280px;
+  width: min(76vw, 38vh, 360px);
+}
+
+/* On phones, size the art against the hero's ACTUAL available height so
+   opening the health panel shrinks the art instead of overflowing it
+   over the header (62cqh leaves room for title + artist) */
+@media (max-width: 767px) {
+  .track-hero {
+    container-type: size;
+  }
+  .hero-art-wrap {
+    width: min(76vw, 38vh, 360px);
+    width: min(76vw, 62cqh, 360px);
+  }
 }
 
 .hero-art {
@@ -309,26 +346,28 @@ main {
   width: 100%;
   aspect-ratio: 1;
   object-fit: cover;
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--bg-secondary);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.55),
+    0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 .hero-art.hidden {
   display: none;
 }
 
-/* Blurred duplicate of the art, sitting behind it as ambient glow */
+/* Blurred duplicate of the art, sitting behind it as ambient stage light */
 .hero-art-glow {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 12px;
-  transform: scale(1.06);
-  filter: blur(32px) saturate(1.5);
-  opacity: 0.55;
+  border-radius: 24px;
+  transform: scale(1.12);
+  filter: blur(42px) saturate(1.6) brightness(0.95);
+  opacity: 0.6;
 }
 
 .hero-art-glow.hidden {
@@ -357,12 +396,13 @@ main {
 
 /* The title itself is the Apple Music link when one is available */
 .hero-title {
-  margin-top: 20px;
+  font-family: var(--font-display);
+  margin-top: 22px;
   max-width: 100%;
-  font-size: 1.25rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.25;
+  font-size: clamp(1.5rem, 6.5vw, 2.1rem);
+  font-weight: 550;
+  letter-spacing: 0.005em;
+  line-height: 1.15;
   color: var(--text-primary);
   text-decoration: none;
   display: -webkit-box;
@@ -371,20 +411,30 @@ main {
   overflow: hidden;
 }
 
+/* Linked titles get a quiet brass underline as the affordance */
 .hero-title.linked {
   cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--accent-gold-dim);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 5px;
+  transition: text-decoration-color 0.2s ease, color 0.2s ease;
 }
 
 .hero-title.linked:hover,
 .hero-title.linked:focus-visible {
-  color: var(--accent-cyan);
+  text-decoration-color: var(--accent-gold);
+  color: #ffffff;
 }
 
 .hero-artist {
-  margin: 4px 0 0;
+  margin: 8px 0 0;
   max-width: 100%;
-  font-size: 0.95rem;
-  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-gold);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -395,7 +445,9 @@ main {
 }
 
 .track-hero.loading .hero-title {
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
+  text-decoration: none;
+  cursor: default;
 }
 
 .track-hero.loading .hero-artist {
@@ -495,22 +547,24 @@ audio {
 
 .play-button {
   flex-shrink: 0;
-  width: 48px;
-  height: 48px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
-  background: var(--text-primary);
+  background: var(--accent-gold);
   border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.1s ease, background-color 0.1s ease;
+  transition: transform 0.1s ease, box-shadow 0.2s ease, background-color 0.1s ease;
   -webkit-tap-highlight-color: transparent;
   position: relative;
+  box-shadow: 0 0 28px rgba(230, 165, 60, 0.25);
 }
 
 .play-button:hover {
-  background: rgba(255, 255, 255, 0.9);
+  background: #f0b452;
+  box-shadow: 0 0 34px rgba(230, 165, 60, 0.4);
 }
 
 .play-button:active {
@@ -519,9 +573,9 @@ audio {
 
 .play-button .icon-play,
 .play-button .icon-pause {
-  width: 18px;
-  height: 18px;
-  fill: var(--bg-primary);
+  width: 22px;
+  height: 22px;
+  fill: #171006;
   display: block;
 }
 
@@ -542,7 +596,8 @@ audio {
 }
 
 .play-button.loading {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--bg-tertiary);
+  box-shadow: none;
   pointer-events: none;
 }
 
@@ -557,7 +612,7 @@ audio {
   width: 18px;
   height: 18px;
   border: 2px solid transparent;
-  border-top-color: var(--text-primary);
+  border-top-color: var(--accent-gold);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
@@ -861,6 +916,7 @@ footer {
   }
 
   .hero-art-wrap {
+    width: min(38vw, 400px);
     max-width: 400px;
   }
 
@@ -872,11 +928,11 @@ footer {
 
   .hero-title {
     margin-top: 24px;
-    font-size: 1.5rem;
+    font-size: 2rem;
   }
 
   .hero-artist {
-    font-size: 1.05rem;
+    font-size: 0.9rem;
   }
 
   .transport,
@@ -942,11 +998,12 @@ footer {
   }
 
   .hero-art-wrap {
+    width: min(36vw, 440px);
     max-width: 440px;
   }
 
   .hero-title {
-    font-size: 1.6rem;
+    font-size: 2.2rem;
   }
 }
 
