@@ -20,15 +20,15 @@ class MonitorService extends EventEmitter {
     
     // State
     this.isRunning = false;
-    this.intervalId = null;
+    this.timer = null;
+    this.runId = 0; // bumped on start/stop so a tick from an old run can't reschedule
     this.knownSegments = new Set(); // Track known segment URLs (bounded, insertion-ordered)
     this.maxKnownSegments = options.maxKnownSegments || 300; // live window is ~6 URLs; 300 is generous
     this.lastSequence = -1; // Track the last sequence number
     this.errorCount = 0;
     this.lastFetchTime = null;
     this.lastSuccessfulFetchTime = null;
-    this.activeFetch = null; // For tracking in-progress fetches
-    this.currentRetryDelay = this.retryDelay; // Grows exponentially across failed recovery cycles
+    this.currentRetryDelay = this.retryDelay; // Grows while the playlist stays unreachable
     
     // Bind methods to preserve 'this' context
     this.fetchPlaylist = this.fetchPlaylist.bind(this);
@@ -52,27 +52,13 @@ class MonitorService extends EventEmitter {
     // Register signal handlers
     this.registerSignalHandlers();
     
-    // Reset error count
     this.errorCount = 0;
+    this.currentRetryDelay = this.retryDelay;
     this.isRunning = true;
     
     logger.info(`Starting playlist monitor for URL: ${this.url}`);
     
-    // Fetch immediately if requested
-    if (options.immediate) {
-      this.fetchPlaylist().catch(error => {
-        logger.error(`Initial playlist fetch failed: ${error.message}`);
-      });
-    }
-    
-    // Set up interval for periodic fetching
-    this.intervalId = setInterval(async () => {
-      try {
-        await this.fetchPlaylist();
-      } catch (error) {
-        logger.error(`Periodic playlist fetch failed: ${error.message}`);
-      }
-    }, this.interval);
+    this._scheduleNext(options.immediate ? 0 : this.interval, ++this.runId);
     
     // Emit 'started' event
     this.emit('started', { url: this.url, interval: this.interval });
@@ -92,18 +78,9 @@ class MonitorService extends EventEmitter {
     
     logger.info('Stopping playlist monitor');
     
-    // Clear interval
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
-    }
-    
-    // Cancel any active fetch
-    if (this.activeFetch && this.activeFetch.cancel) {
-      this.activeFetch.cancel();
-      this.activeFetch = null;
-    }
-    
+    clearTimeout(this.timer);
+    this.timer = null;
+    this.runId++;
     this.isRunning = false;
     
     // Emit 'stopped' event
@@ -112,6 +89,29 @@ class MonitorService extends EventEmitter {
     return true;
   }
   
+  /**
+   * One polling loop: a single timer, and the next tick is only scheduled once
+   * this fetch has settled, so fetches never overlap or stack up
+   * @private
+   */
+  _scheduleNext(delay, runId) {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(async () => {
+      this.timer = null;
+      const result = await this.fetchPlaylist().catch(error => ({ success: false, error: error.message }));
+      if (runId !== this.runId) return;
+
+      let next = this.interval;
+      if (!result.success && this.errorCount >= this.maxConsecutiveErrors) {
+        next = Math.max(this.interval, this.currentRetryDelay);
+        // Capped at 60s: a gap over ~77s between fetch attempts looks like a zombie to the health check
+        this.currentRetryDelay = Math.min(this.currentRetryDelay * 2, 60 * 1000);
+        logger.warn(`Playlist unreachable, next attempt in ${next}ms`);
+      }
+      this._scheduleNext(next, runId);
+    }, delay);
+  }
+
   /**
    * Fetch the playlist and process new segments
    * @param {boolean} [checkRunning=true] - Whether to check if the monitor is running
@@ -175,32 +175,10 @@ class MonitorService extends EventEmitter {
       // Emit 'error' event
       this.emit('error', errorInfo);
       
-      // If too many consecutive errors, pause and retry with exponential backoff
-      if (this.errorCount >= this.maxConsecutiveErrors) {
-        const pauseDelay = this.currentRetryDelay;
-        logger.error(`Max consecutive errors (${this.maxConsecutiveErrors}) reached, pausing monitor for ${pauseDelay}ms`);
-
-        // Clear current interval
-        if (this.intervalId) {
-          clearInterval(this.intervalId);
-          this.intervalId = null;
-        }
-
-        // Emit 'maxErrorsReached' event
-        this.emit('maxErrorsReached', { errorCount: this.errorCount, retryDelay: pauseDelay });
-
-        // Back off: double the pause for each failed recovery cycle, cap at 5 minutes
-        this.currentRetryDelay = Math.min(this.currentRetryDelay * 2, 5 * 60 * 1000);
-
-        // Attempt to restart after delay
-        setTimeout(() => {
-          if (this.isRunning) {
-            logger.info(`Attempting to restart monitor after ${pauseDelay}ms delay`);
-            this.errorCount = 0;
-            this.isRunning = false;  // Reset flag so startMonitoring() can proceed
-            this.startMonitoring({ immediate: true });
-          }
-        }, pauseDelay);
+      // Once per outage; the polling loop backs off from here
+      if (this.errorCount === this.maxConsecutiveErrors) {
+        logger.error(`Max consecutive errors (${this.maxConsecutiveErrors}) reached, backing off`);
+        this.emit('maxErrorsReached', { errorCount: this.errorCount, retryDelay: this.currentRetryDelay });
       }
       
       return errorInfo;
@@ -215,6 +193,7 @@ class MonitorService extends EventEmitter {
    */
   identifyNewSegments(segmentUrls, parsedPlaylist) {
     const newSegments = [];
+    const previousLast = this.lastSequence;
     
     // Process segments to identify new ones
     segmentUrls.forEach((url, index) => {
@@ -249,17 +228,19 @@ class MonitorService extends EventEmitter {
       this.emit('newSegment', segmentInfo);
     });
     
-    // Track sequence discontinuity
-    if (parsedPlaylist.mediaSequence && this.lastSequence !== -1) {
-      const expectedSequence = this.lastSequence + 1;
-      if (parsedPlaylist.mediaSequence > expectedSequence) {
-        const skippedCount = parsedPlaylist.mediaSequence - expectedSequence;
-        logger.warn(`Sequence discontinuity detected: Expected ${expectedSequence}, got ${parsedPlaylist.mediaSequence} (${skippedCount} segments skipped)`);
+    // Track sequence discontinuity (e.g. segments that rolled out of the live
+    // window while we couldn't reach it)
+    if (newSegments.length > 0 && previousLast !== -1) {
+      const expectedSequence = previousLast + 1;
+      const actual = newSegments[0].sequenceNumber;
+      if (actual > expectedSequence) {
+        const skippedCount = actual - expectedSequence;
+        logger.warn(`Sequence discontinuity detected: Expected ${expectedSequence}, got ${actual} (${skippedCount} segments skipped)`);
         
         // Emit 'discontinuity' event
         this.emit('discontinuity', {
           expected: expectedSequence,
-          actual: parsedPlaylist.mediaSequence,
+          actual,
           skippedCount
         });
       }

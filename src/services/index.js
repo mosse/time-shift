@@ -199,6 +199,12 @@ class ServiceManager {
       // Connect services
       this.connectServices();
       
+      // Continue sequence tracking from the restored buffer, so segments missed
+      // while the process was down are reported as a gap on the first fetch
+      if (monitorService.lastSequence === -1 && hybridBufferService.segmentsBySequence.size > 0) {
+        monitorService.lastSequence = Math.max(...hybridBufferService.segmentsBySequence.keys());
+      }
+
       // Start monitoring
       const monitorStarted = monitorService.startMonitoring({
         immediate: options.immediate !== false

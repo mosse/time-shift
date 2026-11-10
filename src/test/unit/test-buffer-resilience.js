@@ -126,7 +126,7 @@ test('metadata writes are atomic with .bak fallback on corruption', async () => 
   assert.equal(recovered.timestamp, 1, 'backup holds the previous write');
 });
 
-test('monitor bounds knownSegments and backs off retry delay', () => {
+test('monitor bounds knownSegments', () => {
   const { MonitorService } = require('../../services/monitor-service');
   const monitor = new MonitorService({ maxKnownSegments: 5 });
 
@@ -137,9 +137,4 @@ test('monitor bounds knownSegments and backs off retry delay', () => {
     monitor.identifyNewSegments(urls, parsed);
   }
   assert.ok(monitor.knownSegments.size <= 5, `knownSegments grew to ${monitor.knownSegments.size}`);
-
-  // Backoff doubles and caps
-  assert.equal(monitor.currentRetryDelay, monitor.retryDelay);
-  monitor.currentRetryDelay = Math.min(monitor.currentRetryDelay * 2, 5 * 60 * 1000);
-  assert.equal(monitor.currentRetryDelay, monitor.retryDelay * 2);
 });

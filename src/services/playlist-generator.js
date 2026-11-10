@@ -36,11 +36,10 @@ class PlaylistGenerator {
       const {
         segmentCount = this.options.segmentCount,
         timeshift = undefined,
-        baseUrl = ''
+        baseUrl = '',
+        now = Date.now()
       } = options;
 
-      // Calculate target time (current time - delay)
-      const now = Date.now();
       // Use provided timeshift if available, otherwise use default
       let timeShiftDuration = this.options.timeShiftDuration;
       if (timeshift !== undefined) {
@@ -55,93 +54,61 @@ class PlaylistGenerator {
       const targetTime = now - timeShiftDuration;
       logger.info(`Generating playlist for target time: ${new Date(targetTime).toISOString()}`);
 
-      // Get segment around the target time
-      let anchorSegment = await this.bufferService.getSegmentAt(targetTime);
-
-      // If the anchor is malformed (e.g. restored from disk without full
-      // metadata), fall back to the nearest shape-valid segment instead of
-      // serving an empty playlist while the buffer still has audio
-      if (anchorSegment && !Number.isFinite(anchorSegment.metadata?.sequenceNumber)) {
-        logger.warn('Anchor segment is missing sequence metadata, falling back to nearest valid segment');
-        anchorSegment = typeof this.bufferService.getNearestValidSegment === 'function'
-          ? this.bufferService.getNearestValidSegment(targetTime)
-          : null;
-      }
-
-      if (!anchorSegment) {
-        const oldestTime = this.bufferService.getOldestSegmentTime();
-        if (oldestTime) {
-          logger.warn(`Target time ${new Date(targetTime).toISOString()} is earlier than oldest segment ${new Date(oldestTime).toISOString()}`);
-        } else {
-          logger.warn('No segments available at target time');
-        }
+      const anchor = this._anchorAt(targetTime);
+      if (!anchor) {
+        logger.warn('No segments available at target time');
         return this._generateEmptyPlaylist(baseUrl);
       }
 
-      // Find the sequence number of the anchor segment
-      const anchorSequence = anchorSegment.metadata.sequenceNumber;
-      logger.debug(`Found anchor segment with sequence: ${anchorSequence}`);
-
-      // Collect segments starting from anchor and expanding outward
-      const playlistSegments = [anchorSegment];
-      let maxDuration = anchorSegment.metadata.duration || 0;
-
-      // Try to get segments before and after the anchor
-      let beforeSeq = anchorSequence - 1;
-      let afterSeq = anchorSequence + 1;
-
-      while (playlistSegments.length < segmentCount) {
-        let foundAny = false;
-
-        // Try to get a segment after
-        if (playlistSegments.length < segmentCount) {
-          const afterSegment = await this.bufferService.getSegmentBySequence(afterSeq);
-          if (afterSegment) {
-            playlistSegments.push(afterSegment);
-            maxDuration = Math.max(maxDuration, afterSegment.metadata.duration || 0);
-            foundAny = true;
-          }
-          afterSeq++;
-        }
-
-        // Try to get a segment before
-        if (playlistSegments.length < segmentCount && beforeSeq >= 0) {
-          const beforeSegment = await this.bufferService.getSegmentBySequence(beforeSeq);
-          if (beforeSegment) {
-            playlistSegments.unshift(beforeSegment);
-            maxDuration = Math.max(maxDuration, beforeSegment.metadata.duration || 0);
-            foundAny = true;
-          }
-          beforeSeq--;
-        }
-
-        // If we couldn't find any more segments, stop looking
-        if (!foundAny) {
-          break;
-        }
+      // A contiguous run of sequence numbers around the playhead. Numbers missing
+      // from the buffer are served as gap filler by the segment route, so the
+      // window keeps moving through a gap instead of repeating the audio before it.
+      const durationMs = (anchor.ref.metadata.duration || 6.4) * 1000;
+      const firstSeq = anchor.seq - Math.floor(segmentCount / 2);
+      const playlistSegments = [];
+      for (let seq = firstSeq; seq < firstSeq + segmentCount; seq++) {
+        playlistSegments.push(this.bufferService.segmentsBySequence.get(seq) || {
+          timestamp: anchor.ref.timestamp + (seq - anchor.ref.metadata.sequenceNumber) * durationMs,
+          metadata: { sequenceNumber: seq, duration: durationMs / 1000 }
+        });
       }
 
-      // Drop any segments that lost their metadata shape so formatting
-      // never dereferences undefined
-      const validSegments = playlistSegments.filter(
-        s => Number.isFinite(s?.metadata?.sequenceNumber)
-      );
-
-      if (validSegments.length === 0) {
-        logger.warn('No valid segments found for playlist');
-        return this._generateEmptyPlaylist(baseUrl);
-      }
-
-      // Sort segments by sequence number to ensure correct order
-      validSegments.sort((a, b) => a.metadata.sequenceNumber - b.metadata.sequenceNumber);
-
-      return this._formatPlaylist(validSegments, maxDuration, baseUrl);
+      const maxDuration = Math.max(...playlistSegments.map(s => s.metadata.duration || 0));
+      return this._formatPlaylist(playlistSegments, maxDuration, baseUrl);
     } catch (error) {
       logger.error(`Error generating playlist: ${error}`);
       return this._generateEmptyPlaylist();
     }
   }
   
+  /**
+   * Sequence number playing at `targetTime`, interpolated from the last real
+   * segment that started at or before it (or back from the oldest)
+   * @private
+   * @returns {{seq: number, ref: Object}|null}
+   */
+  _anchorAt(targetTime) {
+    const segments = this.bufferService.segments;
+    if (!segments.length) return null;
+
+    let lo = 0;
+    let hi = segments.length - 1;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (segments[mid].timestamp <= targetTime) lo = mid;
+      else hi = mid - 1;
+    }
+    let ref = segments[lo];
+    // Restored-from-disk metadata can lack a sequence number
+    if (!Number.isFinite(ref.metadata?.sequenceNumber)) {
+      ref = this.bufferService.getNearestValidSegment?.(targetTime);
+      if (!ref) return null;
+    }
+
+    const durationMs = (ref.metadata.duration || 6.4) * 1000;
+    return { seq: ref.metadata.sequenceNumber + Math.floor((targetTime - ref.timestamp) / durationMs), ref };
+  }
+
   /**
    * Format segments into a valid HLS playlist
    * @private

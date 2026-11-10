@@ -293,9 +293,13 @@ class HybridBufferService extends EventEmitter {
       return;
     }
 
-    // Merge with the previous gap if they touch (continued outage)
+    // Merge with the previous gap if they touch (continued outage). Different
+    // reasons merge too when the sequence ranges join, e.g. the failed downloads
+    // at the start of an outage and the segments skipped by the time it ended.
     const last = this.gaps[this.gaps.length - 1];
-    if (last && gap.startTime <= last.endTime + 60000 && gap.reason === last.reason) {
+    const sequencesJoin = Number.isFinite(gap.fromSeq) && gap.fromSeq <= (last?.toSeq ?? -Infinity) + 1;
+    if (last && gap.startTime <= last.endTime + 60000 && (gap.reason === last.reason || sequencesJoin)) {
+      last.startTime = Math.min(last.startTime, gap.startTime);
       last.endTime = Math.max(last.endTime, gap.endTime);
       if (Number.isFinite(gap.toSeq)) {
         last.toSeq = Math.max(last.toSeq ?? gap.toSeq, gap.toSeq);
@@ -489,6 +493,22 @@ class HybridBufferService extends EventEmitter {
     return loadedSegments;
   }
   
+  /**
+   * Nearest buffered segments before and after a (usually missing) sequence number
+   * @param {number} seq - Sequence number
+   * @returns {{prev: Object|null, next: Object|null}} - Segment metadata, no data loaded
+   */
+  findSequenceNeighbors(seq) {
+    let prev = null;
+    let next = null;
+    for (const segment of this.segments) {
+      const n = segment.metadata?.sequenceNumber;
+      if (n < seq && (!prev || n > prev.metadata.sequenceNumber)) prev = segment;
+      if (n > seq && (!next || n < next.metadata.sequenceNumber)) next = segment;
+    }
+    return { prev, next };
+  }
+
   /**
    * Get a segment by its sequence number
    * @param {number} sequenceNumber - The sequence number of the segment to retrieve
@@ -1031,7 +1051,7 @@ class HybridBufferService extends EventEmitter {
         const fetch = globalThis.fetch || (await import('node-fetch')).default;
         // Use the configured stream URL, not a hardcoded station
         const livePlaylistUrl = config.STREAM_URLS.AKAMAI;
-        const response = await fetch(livePlaylistUrl, { timeout: 5000 });
+        const response = await fetch(livePlaylistUrl, { signal: AbortSignal.timeout(5000) });
         if (response.ok) {
           const playlist = await response.text();
           // Extract the highest sequence number from the playlist
@@ -1123,11 +1143,17 @@ class HybridBufferService extends EventEmitter {
         }
       }
       for (const gap of restoredGaps) {
-        // Skip if an overlapping gap is already recorded
-        const overlaps = this.gaps.some(
+        // A recorded gap may cover only the start of the outage (e.g. the last
+        // failed downloads before the network dropped): widen it, don't drop this
+        const existing = this.gaps.find(
           g => gap.startTime < g.endTime && gap.endTime > g.startTime
         );
-        if (!overlaps) {
+        if (existing) {
+          existing.fromSeq = Math.min(existing.fromSeq, gap.fromSeq);
+          existing.toSeq = Math.max(existing.toSeq, gap.toSeq);
+          existing.startTime = Math.min(existing.startTime, gap.startTime);
+          existing.endTime = Math.max(existing.endTime, gap.endTime);
+        } else {
           this.gaps.push(gap);
         }
       }
@@ -1138,6 +1164,15 @@ class HybridBufferService extends EventEmitter {
 
       const bufferSpanHours = (this.totalDuration / 3600).toFixed(2);
       logger.info(`Restored ${this.segments.length} segments from disk (${bufferSpanHours} hours of audio)`);
+
+      // Files outside the window were skipped above and nothing else would ever
+      // delete them. Safe here: the pipeline hasn't started, so nothing is writing.
+      if (this.segmentsBySequence.size < segmentIds.length) {
+        const removed = await diskStorageService.cleanupSegments(
+          id => this.segmentsBySequence.has(parseInt(id, 10))
+        );
+        logger.info(`Removed ${removed} segment files outside the buffer window`);
+      }
 
       // Save the rebuilt metadata
       this._markMetadataDirty();

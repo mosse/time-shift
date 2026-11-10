@@ -1,6 +1,7 @@
 const express = require('express');
 const { playlistGenerator } = require('../services/playlist-generator');
 const { hybridBufferService } = require('../services/hybrid-buffer-service');
+const gapAudio = require('../services/gap-audio');
 const logger = require('../utils/logger');
 const config = require('../config/config');
 const perf = require('perf_hooks').performance;
@@ -61,27 +62,36 @@ router.get('/stream/segment/:sequenceNumber.ts', async (req, res) => {
     // Retrieve the segment from the buffer
     const segment = await hybridBufferService.getSegmentBySequence(sequenceNumber);
 
-    if (!segment) {
-      logger.warn(`Segment not found: ${sequenceNumber}`);
-      return res.status(404).json({
-        status: 'error',
-        message: 'Segment not found'
-      });
-    }
-
-    // Metadata exists but the file is gone from disk: respond 404 (not 500)
-    // and evict the orphaned entry so playlists stop referencing it
-    if (!segment.data) {
+    // Metadata exists but the file is gone from disk: evict the orphaned entry
+    if (segment && !segment.data) {
       logger.warn(`Segment ${sequenceNumber} has no data on disk, evicting orphaned metadata`);
       if (segment.metadata?.segmentId) {
         hybridBufferService.removeSegment(segment.metadata.segmentId).catch(err => {
           logger.warn(`Failed to evict orphaned segment ${sequenceNumber}: ${err.message}`);
         });
       }
-      return res.status(404).json({
-        status: 'error',
-        message: 'Segment data unavailable'
+    }
+
+    // Not recorded: play gap filler (silence and a spoken notice) in its place
+    if (!segment?.data) {
+      const filler = await gapAudio.fillerSegment(sequenceNumber, hybridBufferService);
+      if (!filler) {
+        logger.warn(`Segment not found: ${sequenceNumber}`);
+        return res.status(404).json({
+          status: 'error',
+          message: 'Segment not found'
+        });
+      }
+      logger.info(`Serving gap filler for missing segment ${sequenceNumber}`);
+      res.set({
+        'Content-Type': 'video/mp2t',
+        'Cache-Control': 'no-store', // the notice changes once recording resumes
+        'Content-Length': filler.length,
+        'Access-Control-Allow-Origin': '*'
       });
+      res.send(filler);
+      success = true;
+      return;
     }
 
     // Set appropriate headers
